@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dra. Natyla Picoloto — Clínica Dentária em Jacarezinho-PR. Agende sua consulta online. Limpeza, estética dental e implantes.">
+    <meta name="theme-color" content="#0d9488">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:title" content="Dra. Natyla Picoloto | Cuidado odontológico em Jacarezinho">
+    <meta property="og:description" content="Atendimento acolhedor, prevenção, estética e reabilitação. Solicite seu horário online.">
+    <meta property="og:image" content="/og.png">
+    <meta property="og:image:width" content="1730">
+    <meta property="og:image:height" content="909">
+    <meta property="og:image:alt" content="Dra. Naty — Odontologia com cuidado de verdade em Jacarezinho, Paraná">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Dra. Naty | Odontologia com cuidado de verdade">
+    <meta name="twitter:description" content="Solicite seu horário online em Jacarezinho, Paraná.">
+    <meta name="twitter:image" content="/og.png">
+    <title>Dra. Natyla Picoloto — Clínica Dentária | Jacarezinho-PR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { font-family: 'Plus Jakarta Sans', sans-serif; }
+        * { box-sizing: border-box; }
+        .font-display { font-family: 'DM Serif Display', serif; }
+        html { scroll-behavior: smooth; }
+        body { overflow-x: hidden; }
+        :focus-visible { outline: 3px solid #5eead4; outline-offset: 3px; }
+        section { scroll-margin-top: 74px; }
+        .loader { border-top-color: transparent; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .fade-up { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
+        .fade-up.visible { opacity: 1; transform: translateY(0); }
+        @keyframes gentle-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(13,148,136,.3)}50%{box-shadow:0 0 0 10px rgba(13,148,136,0)}}
+        .badge-pulse { animation: gentle-pulse 3s ease-in-out infinite; }
+        .gradient-text { background: linear-gradient(135deg,#0d9488 0%,#0369a1 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+        .card-hover { transition: transform .25s ease, box-shadow .25s ease; }
+        .card-hover:hover { transform: translateY(-6px); box-shadow: 0 20px 40px -12px rgba(13,148,136,.18); }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #99f6e4; border-radius: 10px; }
+
+        /* Grade de horários */
+        .horario-btn {
+            transition: all .15s ease;
+            border: 2px solid #e2e8f0;
+            background: #f8fafc;
+            cursor: pointer;
+            border-radius: 12px;
+            padding: 10px 6px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #475569;
+            text-align: center;
+        }
+        .horario-btn:hover:not(:disabled) {
+            border-color: #0d9488;
+            background: #f0fdfa;
+            color: #0d9488;
+        }
+        .horario-btn.selected {
+            border-color: #0d9488;
+            background: #0d9488;
+            color: white;
+            box-shadow: 0 4px 12px rgba(13,148,136,.35);
+        }
+        .horario-btn:disabled {
+            border-color: #f1f5f9;
+            background: #f8fafc;
+            color: #cbd5e1;
+            cursor: not-allowed;
+            text-decoration: line-through;
+        }
+        .horario-btn.carregando {
+            opacity: .5;
+            cursor: wait;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            .fade-up { opacity:1; transform:none; transition:none; }
+            .card-hover:hover { transform:none; }
+            .badge-pulse { animation:none; }
+        }
+    </style>
+</head>
+<body class="bg-white text-slate-800 selection:bg-teal-100 selection:text-teal-900">
+<div id="root"></div>
+<script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ─── CONFIGURAÇÃO ─────────────────────────────────────────────────────
+    const API_BASE = window.location.protocol === 'file:'
+        ? 'http://localhost:3001'
+        : window.location.origin;
+
+    // ─── HELPERS ──────────────────────────────────────────────────────────
+    const dataMinima = () => {
+        const h = new Date();
+        h.setDate(h.getDate() + 1); // mínimo amanhã
+        return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+    };
+
+    const mascaraTelefone = v => {
+        const n = v.replace(/\D/g,'').substring(0,11);
+        if (n.length <= 2)  return n.length ? `(${n}` : '';
+        if (n.length <= 6)  return `(${n.slice(0,2)}) ${n.slice(2)}`;
+        if (n.length <= 10) return `(${n.slice(0,2)}) ${n.slice(2,6)}-${n.slice(6)}`;
+        return `(${n.slice(0,2)}) ${n.slice(2,7)}-${n.slice(7)}`;
+    };
+
+    function useFadeUp() {
+        const ref = useRef(null);
+        useEffect(() => {
+            const el = ref.current; if (!el) return;
+            const obs = new IntersectionObserver(entries => {
+                entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); obs.unobserve(e.target); } });
+            }, { threshold: 0.12 });
+            el.querySelectorAll('.fade-up').forEach(n => obs.observe(n));
+            return () => obs.disconnect();
+        }, []);
+        return ref;
+    }
+
+    // ─── GRADE DE HORÁRIOS ─────────────────────────────────────────────────
+    function GradeHorarios({ data, horarioSelecionado, onSelect }) {
+        const [disponiveis, setDisponiveis] = useState([]);
+        const [carregando,  setCarregando]  = useState(false);
+        const [erro, setErro] = useState(false);
+        const [tentativa, setTentativa] = useState(0);
+        const todos = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+
+        useEffect(() => {
+            if (!data) { setDisponiveis([]); return; }
+            setCarregando(true);
+            setErro(false);
+            onSelect(''); // reseta seleção ao mudar data
+            fetch(`${API_BASE}/api/horarios-disponiveis?data=${data}`)
+                .then(r => {
+                    if (!r.ok) throw new Error('Não foi possível consultar a agenda.');
+                    return r.json();
+                })
+                .then(d => { setDisponiveis(d.disponiveis || []); })
+                .catch(() => { setDisponiveis([]); setErro(true); })
+                .finally(() => setCarregando(false));
+        }, [data, tentativa]);
+
+        if (!data) return (
+            <p className="text-slate-400 text-sm text-center py-4">
+                <i className="fa-regular fa-calendar mr-2"></i>Selecione uma data primeiro
+            </p>
+        );
+
+        const manha = todos.filter(h => parseInt(h) < 12);
+        const tarde = todos.filter(h => parseInt(h) >= 12);
+
+        const Slot = ({ h }) => {
+            const livre = disponiveis.includes(h);
+            const sel   = horarioSelecionado === h;
+            return (
+                <button
+                    type="button"
+                    disabled={!livre || carregando}
+                    onClick={() => livre && onSelect(h)}
+                    className={`horario-btn ${sel ? 'selected' : ''} ${carregando ? 'carregando' : ''}`}
+                    title={livre ? `Selecionar ${h}` : 'Horário ocupado'}
+                >
+                    {carregando ? <i className="fa-solid fa-circle-notch fa-spin text-xs"></i> : h}
+                    {!carregando && !livre && <span className="block text-[10px] font-normal mt-0.5 opacity-70">Ocupado</span>}
+                </button>
+            );
+        };
+
+        return (
+            <div>
+                <div className="mb-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i className="fa-solid fa-sun text-amber-400"></i> Manhã
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                        {manha.map(h => <Slot key={h} h={h} />)}
+                    </div>
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i className="fa-solid fa-moon text-indigo-400"></i> Tarde
+                    </p>
+                    <div className="grid grid-cols-5 gap-2">
+                        {tarde.map(h => <Slot key={h} h={h} />)}
+                    </div>
+                </div>
+                {!carregando && erro && (
+                    <div className="text-center text-sm text-amber-700 mt-3 bg-amber-50 p-3 rounded-xl border border-amber-200" role="alert">
+                        <p className="font-semibold"><i className="fa-solid fa-wifi mr-1"></i> Não conseguimos consultar a agenda agora.</p>
+                        <button type="button" onClick={() => setTentativa(t => t + 1)} className="mt-2 text-xs font-bold underline hover:text-amber-900">Tentar novamente</button>
+                    </div>
+                )}
+                {!carregando && !erro && disponiveis.length === 0 && (
+                    <p className="text-center text-sm text-red-500 font-semibold mt-3 bg-red-50 py-2 rounded-xl border border-red-100">
+                        <i className="fa-solid fa-calendar-xmark mr-1"></i> Nenhum horário disponível nesta data.
+                    </p>
+                )}
+                {!carregando && !erro && disponiveis.length > 0 && (
+                    <p className="text-xs text-slate-400 text-center mt-2">
+                        {disponiveis.length} horário(s) disponível(eis)
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    // ─── FORMULÁRIO ────────────────────────────────────────────────────────
+    function FormAgendamento() {
+        const [formData, setFormData] = useState({
+            nome:'', telefone:'', data:'', horario:'', preferencia:'', observacoes:''
+        });
+        const [estado, setEstado] = useState({ loading:false, enviado:false, erro:null });
+        const [aceitouPrivacidade, setAceitouPrivacidade] = useState(false);
+        const [resumoPedido, setResumoPedido] = useState(null);
+
+        const handleChange = e => {
+            const { name, value } = e.target;
+            if (name === 'data' && value) {
+                const diaSemana = new Date(`${value}T12:00:00`).getDay();
+                if (diaSemana === 0 || diaSemana === 6) {
+                    setEstado({ loading:false, enviado:false, erro:'Atendemos de segunda a sexta. Escolha um dia útil.' });
+                    setFormData(prev => ({ ...prev, data:'', horario:'' }));
+                    return;
+                }
+            }
+            if (estado.erro) setEstado(prev => ({ ...prev, erro:null }));
+            setFormData(prev => ({ ...prev, [name]: name === 'telefone' ? mascaraTelefone(value) : value }));
+        };
+
+        const setHorario = h => setFormData(prev => ({ ...prev, horario: h }));
+
+        const handleSubmit = async e => {
+            e.preventDefault();
+            if (!formData.horario) {
+                setEstado({ loading:false, enviado:false, erro:'Selecione um horário disponível.' });
+                setTimeout(() => setEstado(p => ({ ...p, erro:null })), 5000);
+                return;
+            }
+            const tel = formData.telefone.replace(/\D/g,'');
+            if (tel.length < 10) {
+                setEstado({ loading:false, enviado:false, erro:'Informe um celular válido com DDD.' });
+                setTimeout(() => setEstado(p => ({ ...p, erro:null })), 5000);
+                return;
+            }
+            if (!aceitouPrivacidade) {
+                setEstado({ loading:false, enviado:false, erro:'Confirme o uso dos dados para solicitar o agendamento.' });
+                return;
+            }
+            setEstado({ loading:true, enviado:false, erro:null });
+            try {
+                const res = await fetch(`${API_BASE}/api/agendamentos`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...formData, telefone: tel })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.erro || 'Erro ao enviar.');
+                setResumoPedido({ data:formData.data, horario:formData.horario });
+                setEstado({ loading:false, enviado:true, erro:null });
+                setAceitouPrivacidade(false);
+                setFormData({ nome:'', telefone:'', data:'', horario:'', preferencia:'', observacoes:'' });
+            } catch (err) {
+                setEstado({ loading:false, enviado:false, erro: err.message });
+                setTimeout(() => setEstado(p => ({ ...p, erro:null })), 7000);
+            }
+        };
+
+        const fieldClass = "w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-teal-500 transition bg-slate-50 focus:bg-white font-medium text-sm text-slate-800 placeholder:text-slate-400 outline-none";
+
+        if (estado.enviado) return (
+            <div className="flex flex-col items-center justify-center text-center py-14 space-y-5">
+                <div className="w-20 h-20 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center text-4xl badge-pulse">
+                    <i className="fa-solid fa-check"></i>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900">Solicitação recebida!</h3>
+                <p className="text-slate-500 max-w-xs leading-relaxed text-sm">
+                    Reservamos sua solicitação para {resumoPedido?.data ? new Date(`${resumoPedido.data}T12:00:00`).toLocaleDateString('pt-BR') : 'a data escolhida'}, às {resumoPedido?.horario}. A consulta fica confirmada após nosso retorno pelo WhatsApp.
+                </p>
+                <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                   className="inline-flex items-center gap-2 bg-green-500 text-white font-bold px-6 py-3 rounded-full hover:bg-green-600 transition shadow-md">
+                    <i className="fa-brands fa-whatsapp text-lg"></i> Conversar no WhatsApp
+                </a>
+                <button onClick={() => setEstado({ loading:false, enviado:false, erro:null })}
+                    className="text-xs text-slate-400 hover:text-teal-600 transition underline">
+                    Fazer outro agendamento
+                </button>
+            </div>
+        );
+
+        return (
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+                <div className="mb-5">
+                    <p className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-1">Leva menos de 2 minutos</p>
+                    <h3 className="text-xl font-bold text-slate-900">Solicite seu horário</h3>
+                    <p className="text-xs text-slate-500 mt-1">Você receberá a confirmação pelo WhatsApp.</p>
+                </div>
+
+                {estado.erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                        <i className="fa-solid fa-circle-exclamation flex-shrink-0"></i>
+                        {estado.erro}
+                    </div>
+                )}
+
+                {/* Nome */}
+                <div>
+                    <label htmlFor="nome" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Nome completo <span className="text-red-400">*</span>
+                    </label>
+                    <input id="nome" autoComplete="name" required type="text" name="nome" value={formData.nome} onChange={handleChange}
+                        maxLength={150} placeholder="Como prefere ser chamado?"
+                        className={fieldClass} />
+                </div>
+
+                {/* Telefone */}
+                <div>
+                    <label htmlFor="telefone" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Celular / WhatsApp <span className="text-red-400">*</span>
+                    </label>
+                    <input id="telefone" autoComplete="tel" required type="tel" name="telefone" value={formData.telefone} onChange={handleChange}
+                        placeholder="(43) 9 9999-0000" inputMode="numeric"
+                        className={fieldClass} />
+                </div>
+
+                {/* Motivo */}
+                <div>
+                    <label htmlFor="preferencia" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Motivo da consulta <span className="text-red-400">*</span>
+                    </label>
+                    <select id="preferencia" required name="preferencia" value={formData.preferencia} onChange={handleChange}
+                        className={fieldClass}>
+                        <option value="">Qual o motivo principal?</option>
+                        <option value="limpeza">🦷 Check-up / Limpeza</option>
+                        <option value="dor">🚨 Urgência / Dor</option>
+                        <option value="estetica">✨ Estética Dental</option>
+                        <option value="implante">🔩 Implante Dentário</option>
+                        <option value="orcamento">📋 Orçamento de Tratamento</option>
+                        <option value="outro">💬 Outro Motivo</option>
+                    </select>
+                </div>
+
+                {/* Data */}
+                <div>
+                    <label htmlFor="data" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Data desejada <span className="text-red-400">*</span>
+                    </label>
+                    <input id="data" required type="date" name="data" value={formData.data} onChange={handleChange}
+                        min={dataMinima()}
+                        className={fieldClass} />
+                </div>
+
+                {/* Grade de horários */}
+                <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                        Horário disponível <span className="text-red-400">*</span>
+                    </label>
+                    <div className="bg-slate-50 border-2 border-slate-200 rounded-xl p-4">
+                        <GradeHorarios
+                            data={formData.data}
+                            horarioSelecionado={formData.horario}
+                            onSelect={setHorario}
+                        />
+                    </div>
+                    {formData.horario && (
+                        <p className="text-teal-600 text-xs font-bold mt-1.5 flex items-center gap-1.5">
+                            <i className="fa-solid fa-check-circle"></i>
+                            Horário selecionado: {formData.horario}
+                        </p>
+                    )}
+                </div>
+
+                {/* Observações */}
+                <div>
+                    <label htmlFor="observacoes" className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        Observações <span className="text-slate-400 font-normal text-xs">(opcional)</span>
+                    </label>
+                    <textarea id="observacoes" name="observacoes" value={formData.observacoes} onChange={handleChange}
+                        rows="2" maxLength={1000} placeholder="Alguma informação adicional?"
+                        className={`${fieldClass} resize-none`}>
+                    </textarea>
+                </div>
+
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-teal-50 border border-teal-100 cursor-pointer">
+                    <input type="checkbox" checked={aceitouPrivacidade} onChange={e => setAceitouPrivacidade(e.target.checked)} className="mt-0.5 w-4 h-4 accent-teal-600" />
+                    <span className="text-xs text-slate-600 leading-relaxed">Autorizo o uso destes dados exclusivamente para contato e organização do atendimento.</span>
+                </label>
+
+                <button disabled={estado.loading || !formData.horario || !aceitouPrivacidade} type="submit"
+                    className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 active:bg-teal-800 transition shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex justify-center items-center gap-2 text-base mt-2">
+                    {estado.loading
+                        ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full loader"></div> Enviando...</>
+                        : <><i className="fa-solid fa-paper-plane"></i> Solicitar este horário</>
+                    }
+                </button>
+                <p className="text-center text-xs text-slate-400 pt-1">
+                    <i className="fa-solid fa-shield-halved text-teal-400 mr-1"></i>
+                    Seus dados são usados apenas para organizar o atendimento.
+                </p>
+            </form>
+        );
+    }
+
+    // ─── ILUSTRAÇÃO SVG ────────────────────────────────────────────────────
+    function HeroIllustration() {
+        return (
+            <svg viewBox="0 0 500 440" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full max-w-lg drop-shadow-xl" aria-hidden="true">
+                <rect x="30" y="70" width="440" height="330" rx="28" fill="#f0fdfa"/>
+                <rect x="30" y="70" width="440" height="330" rx="28" stroke="#99f6e4" strokeWidth="1.5"/>
+                <rect x="30" y="70" width="440" height="48" rx="28" fill="#ccfbf1"/>
+                <rect x="30" y="98" width="440" height="20" fill="#ccfbf1"/>
+                <rect x="290" y="130" width="140" height="100" rx="10" fill="white" stroke="#5eead4" strokeWidth="1.5"/>
+                <line x1="360" y1="130" x2="360" y2="230" stroke="#5eead4" strokeWidth="1.5"/>
+                <line x1="290" y1="180" x2="430" y2="180" stroke="#5eead4" strokeWidth="1.5"/>
+                <circle cx="318" cy="155" r="14" fill="#fde68a" opacity="0.9"/>
+                <rect x="70" y="250" width="200" height="22" rx="11" fill="#0d9488"/>
+                <rect x="90" y="228" width="160" height="28" rx="10" fill="#14b8a6"/>
+                <rect x="78" y="272" width="22" height="70" rx="9" fill="#0d9488"/>
+                <rect x="240" y="272" width="22" height="70" rx="9" fill="#0d9488"/>
+                <rect x="68" y="336" width="200" height="14" rx="7" fill="#0f766e"/>
+                <rect x="160" y="205" width="80" height="28" rx="10" fill="#14b8a6"/>
+                <rect x="254" y="248" width="10" height="68" rx="5" fill="#94a3b8"/>
+                <rect x="250" y="240" width="50" height="12" rx="6" fill="#cbd5e1"/>
+                <path d="M320 155 C320 137 332 126 350 126 C368 126 380 137 380 155 C380 173 372 185 366 202 C362 213 358 220 350 220 C342 220 338 213 334 202 C328 185 320 173 320 155Z" fill="white" stroke="#99f6e4" strokeWidth="2"/>
+                <ellipse cx="340" cy="148" rx="5" ry="9" fill="#e0fdf4" opacity="0.8"/>
+                <rect x="90" y="112" width="48" height="48" rx="10" fill="white" stroke="#99f6e4" strokeWidth="1.5"/>
+                <rect x="107" y="118" width="14" height="36" rx="4" fill="#14b8a6"/>
+                <rect x="97" y="128" width="34" height="14" rx="4" fill="#14b8a6"/>
+                <ellipse cx="420" cy="290" rx="38" ry="32" fill="#f0fdf4" stroke="#86efac" strokeWidth="1.5"/>
+                <path d="M405 310 L398 325 L418 312" fill="#f0fdf4" stroke="#86efac" strokeWidth="1.5" strokeLinejoin="round"/>
+                <text x="420" y="296" textAnchor="middle" fontSize="22" fill="#16a34a">✓</text>
+                <circle cx="450" cy="100" r="22" fill="#ccfbf1" opacity="0.5"/>
+                <circle cx="55" cy="380" r="16" fill="#99f6e4" opacity="0.4"/>
+                <circle cx="460" cy="380" r="10" fill="#5eead4" opacity="0.3"/>
+            </svg>
+        );
+    }
+
+    // ─── HEADER ────────────────────────────────────────────────────────────
+    function Header() {
+        const [mobileOpen, setMobileOpen] = useState(false);
+        const [scrolled, setScrolled] = useState(false);
+        useEffect(() => {
+            const fn = () => setScrolled(window.scrollY > 20);
+            window.addEventListener('scroll', fn, { passive:true });
+            return () => window.removeEventListener('scroll', fn);
+        }, []);
+        return (
+            <header className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/95 backdrop-blur-md shadow-md' : 'bg-white/90 backdrop-blur-sm shadow-sm'}`}>
+                <div className="max-w-6xl mx-auto px-5 md:px-8">
+                    <div className="flex justify-between items-center h-16">
+                        <a href="#inicio" className="flex items-center gap-3 group">
+                            <div className="bg-teal-600 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-sm group-hover:bg-teal-700 transition-colors">
+                                <i className="fa-solid fa-tooth text-sm"></i>
+                            </div>
+                            <div>
+                                <span className="text-base font-bold text-slate-900 block leading-tight">Dra. Natyla Picoloto</span>
+                                <span className="text-[10px] text-teal-600 font-semibold tracking-widest uppercase">Clínica Dentária</span>
+                            </div>
+                        </a>
+                        <nav className="hidden md:flex items-center gap-7 font-semibold text-sm text-slate-600">
+                            <a href="#inicio"      className="hover:text-teal-600 transition-colors">Início</a>
+                            <a href="#servicos"    className="hover:text-teal-600 transition-colors">Especialidades</a>
+                            <a href="#como-funciona" className="hover:text-teal-600 transition-colors">Como funciona</a>
+                            <a href="#agendar"     className="bg-teal-600 text-white px-5 py-2.5 rounded-full font-bold text-sm hover:bg-teal-700 transition shadow-sm hover:shadow-md">
+                                <i className="fa-solid fa-calendar-check mr-1.5"></i>Agendar Consulta
+                            </a>
+                        </nav>
+                        <div className="md:hidden flex items-center gap-3">
+                            <a href="#agendar" className="bg-teal-600 text-white px-4 py-2 rounded-full text-xs font-bold">Agendar</a>
+                            <button onClick={() => setMobileOpen(!mobileOpen)} className="w-9 h-9 flex items-center justify-center text-slate-500">
+                                <i className={`fa-solid ${mobileOpen ? 'fa-xmark' : 'fa-bars'} text-lg`}></i>
+                            </button>
+                        </div>
+                    </div>
+                    {mobileOpen && (
+                        <div className="md:hidden pb-4 border-t border-slate-100 mt-1 pt-3 flex flex-col gap-1">
+                            {[['#inicio','Início'],['#servicos','Especialidades'],['#como-funciona','Como funciona'],['#agendar','Agendar Consulta']].map(([href,label]) => (
+                                <a key={href} href={href} onClick={() => setMobileOpen(false)}
+                                   className="px-3 py-2.5 rounded-xl text-slate-600 font-semibold text-sm hover:bg-teal-50 hover:text-teal-700 transition-colors">
+                                    {label}
+                                </a>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </header>
+        );
+    }
+
+    // ─── APP ───────────────────────────────────────────────────────────────
+    function App() {
+        const heroRef  = useFadeUp();
+        const statsRef = useFadeUp();
+        const servRef  = useFadeUp();
+        const depRef   = useFadeUp();
+
+        const etapas = [
+            { numero:'01', titulo:'Conte o que você precisa', texto:'Escolha o motivo da consulta, a melhor data e um horário disponível.' },
+            { numero:'02', titulo:'Receba a confirmação', texto:'A equipe confere a agenda e confirma todos os detalhes diretamente pelo WhatsApp.' },
+            { numero:'03', titulo:'Venha com tranquilidade', texto:'Na consulta, você recebe avaliação individual e um plano de cuidado explicado etapa por etapa.' },
+        ];
+
+        return (
+            <div className="min-h-screen">
+                <Header />
+                <a href="https://wa.me/554396941226?text=Ol%C3%A1%2C%20gostaria%20de%20tirar%20uma%20d%C3%BAvida%20sobre%20o%20atendimento." target="_blank" rel="noopener noreferrer" aria-label="Falar com a clínica pelo WhatsApp"
+                   className="fixed bottom-4 right-4 z-40 bg-green-500 text-white h-12 px-4 rounded-full shadow-xl flex items-center gap-2 font-bold text-xs hover:bg-green-600 transition">
+                    <i className="fa-brands fa-whatsapp text-xl"></i><span className="hidden sm:inline">Falar no WhatsApp</span>
+                </a>
+
+                {/* ── HERO ─── */}
+                <section id="inicio" className="bg-gradient-to-br from-teal-50 via-white to-slate-50 pt-16 pb-20 md:pt-20 md:pb-28 px-5 md:px-8 overflow-hidden" ref={heroRef}>
+                    <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
+                        <div>
+                            <div className="fade-up">
+                                <span className="inline-flex items-center gap-2 bg-teal-100 text-teal-700 text-xs font-bold uppercase tracking-widest px-4 py-1.5 rounded-full mb-6">
+                                    <span className="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></span>Jacarezinho · Paraná
+                                </span>
+                            </div>
+                            <h1 className="font-display text-4xl md:text-5xl text-slate-900 leading-tight mb-6 fade-up" style={{transitionDelay:'.1s'}}>
+                                O seu melhor sorriso<br/>
+                                <span className="gradient-text italic">merece cuidado</span><br/>
+                                de verdade.
+                            </h1>
+                            <p className="text-base text-slate-600 mb-8 leading-relaxed max-w-md fade-up" style={{transitionDelay:'.2s'}}>
+                                Tratamentos modernos, ambiente acolhedor e atenção individualizada.
+                                Agende sua consulta e cuide da sua saúde bucal com quem entende.
+                            </p>
+                            <div className="flex flex-wrap gap-3 fade-up" style={{transitionDelay:'.3s'}}>
+                                <a href="#agendar" className="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3.5 rounded-full font-bold text-sm hover:bg-teal-700 transition shadow-lg hover:-translate-y-0.5">
+                                    <i className="fa-solid fa-calendar-check"></i> Solicitar horário
+                                </a>
+                                <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                                   className="inline-flex items-center gap-2 bg-green-500 text-white px-6 py-3.5 rounded-full font-bold text-sm hover:bg-green-600 transition shadow-lg hover:-translate-y-0.5">
+                                    <i className="fa-brands fa-whatsapp text-lg"></i> WhatsApp Direto
+                                </a>
+                            </div>
+                            <div className="flex flex-wrap gap-x-5 gap-y-2 mt-8 fade-up text-xs font-semibold text-slate-500" style={{transitionDelay:'.4s'}}>
+                                <span><i className="fa-solid fa-check text-teal-500 mr-1.5"></i>Atendimento individualizado</span>
+                                <span><i className="fa-solid fa-check text-teal-500 mr-1.5"></i>Plano explicado com clareza</span>
+                                <span><i className="fa-solid fa-check text-teal-500 mr-1.5"></i>Contato direto</span>
+                            </div>
+                        </div>
+                        <div className="hidden md:flex justify-center items-center fade-up" style={{transitionDelay:'.2s'}}>
+                            <HeroIllustration />
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── STATS ─── */}
+                <section className="bg-teal-600 py-12 px-5 md:px-8" ref={statsRef}>
+                    <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 text-white text-center">
+                        {[
+                            { icon:'fa-ear-listen',    num:'Escuta',  label:'Consulta com atenção' },
+                            { icon:'fa-clock',         num:'Seg–Sex', label:'Atendimento em dias úteis' },
+                            { icon:'fa-list-check',    num:'Clareza', label:'Etapas bem explicadas' },
+                            { icon:'fa-heart',         num:'Cuidado', label:'Saúde e estética juntas' },
+                        ].map((d,i) => (
+                            <div key={i} className="flex flex-col items-center gap-2 fade-up" style={{transitionDelay:`${i*.1}s`}}>
+                                <div className="w-12 h-12 bg-teal-500/50 rounded-2xl flex items-center justify-center mb-1">
+                                    <i className={`fa-solid ${d.icon} text-teal-100 text-xl`}></i>
+                                </div>
+                                <span className="text-2xl font-extrabold">{d.num}</span>
+                                <span className="text-teal-100 text-sm">{d.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                {/* ── ESPECIALIDADES ─── */}
+                <section id="servicos" className="py-20 md:py-28 px-5 md:px-8 bg-white" ref={servRef}>
+                    <div className="max-w-6xl mx-auto">
+                        <div className="text-center mb-14 fade-up">
+                            <span className="text-teal-600 font-bold text-sm uppercase tracking-widest">O que oferecemos</span>
+                            <h2 className="font-display text-3xl md:text-4xl text-slate-900 mt-2 mb-4">Nossas Especialidades</h2>
+                            <p className="text-slate-500 max-w-xl mx-auto text-sm leading-relaxed">Tecnologia atual e cuidado humanizado em cada atendimento.</p>
+                        </div>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {[
+                                { icon:'fa-shield-heart',       title:'Prevenção & Saúde',  desc:'Limpeza profissional, restaurações estéticas e check-ups completos para manter sua saúde bucal em dia.', tag:'Mais procurado', cor:'bg-teal-50',   iconCor:'text-teal-600 bg-teal-100',   tagCor:'bg-teal-100 text-teal-700' },
+                                { icon:'fa-wand-magic-sparkles', title:'Estética Dental',    desc:'Clareamento, facetas em resina e lentes de contato dental para um sorriso mais bonito e confiante.',   tag:'Transformação', cor:'bg-violet-50', iconCor:'text-violet-600 bg-violet-100', tagCor:'bg-violet-100 text-violet-700' },
+                                { icon:'fa-tooth',               title:'Implantodontia',     desc:'Reabilitação com implantes osseointegrados — função e estética devolvidas com segurança e durabilidade.', tag:'Alta precisão', cor:'bg-amber-50',  iconCor:'text-amber-600 bg-amber-100',   tagCor:'bg-amber-100 text-amber-700' },
+                            ].map((srv,i) => (
+                                <div key={i} className={`p-7 rounded-3xl ${srv.cor} border border-slate-100 card-hover fade-up`} style={{transitionDelay:`${i*.12}s`}}>
+                                    <div className="flex items-start justify-between mb-5">
+                                        <div className={`w-14 h-14 ${srv.iconCor} rounded-2xl flex items-center justify-center text-2xl`}>
+                                            <i className={`fa-solid ${srv.icon}`}></i>
+                                        </div>
+                                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${srv.tagCor}`}>{srv.tag}</span>
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-900 mb-2">{srv.title}</h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed">{srv.desc}</p>
+                                    <a href="#agendar" className="inline-flex items-center gap-1.5 text-teal-600 font-bold text-xs mt-4 hover:gap-2.5 transition-all">
+                                        Agendar consulta <i className="fa-solid fa-arrow-right text-[10px]"></i>
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── COMO FUNCIONA ─── */}
+                <section id="como-funciona" className="py-20 md:py-28 px-5 md:px-8 bg-slate-50" ref={depRef}>
+                    <div className="max-w-6xl mx-auto">
+                        <div className="text-center mb-14 fade-up">
+                            <span className="text-teal-600 font-bold text-sm uppercase tracking-widest">Simples e transparente</span>
+                            <h2 className="font-display text-3xl md:text-4xl text-slate-900 mt-2 mb-4">Do pedido à consulta</h2>
+                            <p className="text-slate-500 max-w-xl mx-auto text-sm leading-relaxed">Você sabe o que acontece em cada etapa, sem surpresa e sem complicação.</p>
+                        </div>
+                        <div className="grid md:grid-cols-3 gap-6">
+                            {etapas.map((etapa,i) => (
+                                <div key={i} className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100 card-hover fade-up" style={{transitionDelay:`${i*.12}s`}}>
+                                    <span className="font-display text-4xl text-teal-200">{etapa.numero}</span>
+                                    <h3 className="font-bold text-slate-900 text-lg mt-4 mb-2">{etapa.titulo}</h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed">{etapa.texto}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── DÚVIDAS FREQUENTES ─── */}
+                <section className="py-16 md:py-20 px-5 md:px-8 bg-white" aria-labelledby="faq-title">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="text-center mb-10">
+                            <span className="text-teal-600 font-bold text-sm uppercase tracking-widest">Antes da consulta</span>
+                            <h2 id="faq-title" className="font-display text-3xl text-slate-900 mt-2">Dúvidas frequentes</h2>
+                        </div>
+                        <div className="grid md:grid-cols-3 gap-4">
+                            {[
+                                ['O horário já fica confirmado?','O pedido é recebido na agenda e a confirmação final chega pelo WhatsApp.'],
+                                ['O que levar?','Documento pessoal e, se tiver, exames ou radiografias odontológicas recentes.'],
+                                ['Estou com dor forte. E agora?','Avise no campo de observações e chame no WhatsApp para verificarmos o encaixe mais rápido.'],
+                            ].map(([pergunta,resposta]) => (
+                                <article key={pergunta} className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                                    <h3 className="font-bold text-slate-900 text-sm mb-2">{pergunta}</h3>
+                                    <p className="text-slate-600 text-xs leading-relaxed">{resposta}</p>
+                                </article>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── AGENDAMENTO ─── */}
+                <section id="agendar" className="py-20 md:py-28 px-5 md:px-8 bg-slate-900 text-white relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-900/20 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4 pointer-events-none" aria-hidden="true"></div>
+                    <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-teal-900/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/4 pointer-events-none" aria-hidden="true"></div>
+                    <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-14 relative z-10 items-start">
+                        <div className="md:sticky md:top-24">
+                            <span className="text-teal-400 font-bold text-sm uppercase tracking-widest">Fácil e rápido</span>
+                            <h2 className="font-display text-3xl md:text-4xl mt-2 mb-4 text-white">Solicite sua<br/>Consulta</h2>
+                            <p className="text-slate-400 mb-10 text-sm leading-relaxed max-w-sm">
+                                Preencha o formulário, escolha o horário disponível e nossa equipe confirmará pelo WhatsApp. Simples assim!
+                            </p>
+                            <div className="space-y-5">
+                                {[
+                                    { icon:'fa-brands fa-whatsapp', href:'https://wa.me/554396941226', titulo:'WhatsApp',  sub:'(43) 9694-1226',              cor:'bg-green-500/20 text-green-400' },
+                                    { icon:'fa-solid fa-location-dot', href:null,                      titulo:'Endereço', sub:'Centro — Jacarezinho, PR',       cor:'bg-teal-500/20 text-teal-400' },
+                                    { icon:'fa-regular fa-clock', href:null,                           titulo:'Horário',  sub:'Segunda a Sexta, 08h às 18h',    cor:'bg-blue-500/20 text-blue-400' },
+                                    { icon:'fa-brands fa-instagram', href:'https://www.instagram.com/natylapicoloto', titulo:'Instagram', sub:'@natylapicoloto', cor:'bg-pink-500/20 text-pink-400' },
+                                ].map((c,i) => {
+                                    const inner = (
+                                        <div className={`flex items-center gap-4 group ${c.href ? 'cursor-pointer' : ''}`}>
+                                            <div className={`w-11 h-11 ${c.cor} rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${c.href ? 'group-hover:scale-110 transition-transform' : ''}`}>
+                                                <i className={c.icon}></i>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-white text-sm">{c.titulo}</h4>
+                                                <p className="text-slate-400 text-sm mt-0.5">{c.sub}</p>
+                                            </div>
+                                        </div>
+                                    );
+                                    return c.href
+                                        ? <a key={i} href={c.href} target="_blank" rel="noopener noreferrer">{inner}</a>
+                                        : <div key={i}>{inner}</div>;
+                                })}
+                            </div>
+                        </div>
+                        <div className="bg-white text-slate-800 p-8 md:p-10 rounded-3xl shadow-2xl">
+                            <FormAgendamento />
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── FOOTER ─── */}
+                <footer className="bg-slate-950 text-slate-400 py-10 px-5 md:px-8 border-t border-slate-900">
+                    <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 text-sm">
+                        <div className="flex items-center gap-2 text-slate-300">
+                            <div className="bg-teal-600 text-white w-7 h-7 rounded-lg flex items-center justify-center text-xs">
+                                <i className="fa-solid fa-tooth"></i>
+                            </div>
+                            <span className="font-bold">Dra. Natyla Picoloto</span>
+                            <span className="text-slate-700">·</span>
+                            <span className="text-slate-500">Clínica Dentária — Jacarezinho, PR</span>
+                        </div>
+                        <div className="flex gap-5 items-center">
+                            <a href="https://www.instagram.com/natylapicoloto" target="_blank" rel="noopener noreferrer"
+                               className="hover:text-teal-400 transition flex items-center gap-1.5 text-xs">
+                                <i className="fa-brands fa-instagram"></i> @natylapicoloto
+                            </a>
+                            <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                               className="hover:text-green-400 transition flex items-center gap-1.5 text-xs">
+                                <i className="fa-brands fa-whatsapp"></i> (43) 9694-1226
+                            </a>
+                        </div>
+                    </div>
+                    <div className="max-w-6xl mx-auto mt-6 pt-6 border-t border-slate-900 text-xs text-slate-700 text-center">
+                        © {new Date().getFullYear()} Dra. Natyla Picoloto — Clínica Dentária. Todos os direitos reservados.
+                    </div>
+                </footer>
+            </div>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
