@@ -14,16 +14,16 @@ test('normaliza e valida e-mails', () => {
 });
 
 test('exige senha com tamanho, letra e número', () => {
-    assert.match(validarSenha('curta1'), /8 caracteres/);
-    assert.match(validarSenha('abcdefgh'), /letra e um número/);
-    assert.equal(validarSenha('Sorriso2026'), null);
+    assert.match(validarSenha('curta1'), /12 caracteres/);
+    assert.match(validarSenha('abcdefghijkl'), /letra e um número/);
+    assert.equal(validarSenha('SorrisoSeguro2026'), null);
 });
 
 test('hash de senha é salgado e verificável', async () => {
-    const a = await hashSenha('Sorriso2026');
-    const b = await hashSenha('Sorriso2026');
+    const a = await hashSenha('SorrisoSeguro2026');
+    const b = await hashSenha('SorrisoSeguro2026');
     assert.notEqual(a, b);
-    assert.equal(await verificarSenha('Sorriso2026', a), true);
+    assert.equal(await verificarSenha('SorrisoSeguro2026', a), true);
     assert.equal(await verificarSenha('senha-errada', a), false);
 });
 

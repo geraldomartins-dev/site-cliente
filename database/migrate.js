@@ -56,6 +56,29 @@ async function migrar() {
 
     try {
         console.log('Aplicando estrutura segura do banco...');
+        await conn.query(`
+            CREATE TABLE IF NOT EXISTS agendamentos (
+                id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                nome VARCHAR(100) NOT NULL,
+                telefone VARCHAR(20) NOT NULL,
+                email VARCHAR(190) NULL,
+                data DATE NOT NULL,
+                horario VARCHAR(20) NOT NULL,
+                preferencia VARCHAR(50) NULL,
+                observacoes TEXT NULL,
+                origem VARCHAR(20) NOT NULL DEFAULT 'site',
+                profissional_id INT UNSIGNED NULL,
+                criadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                status VARCHAR(20) NOT NULL DEFAULT 'pendente',
+                motivo_cancelamento VARCHAR(300) NULL,
+                valor DECIMAL(10,2) NULL,
+                pago TINYINT(1) NOT NULL DEFAULT 0,
+                forma_pagamento VARCHAR(30) NULL,
+                pago_em DATETIME NULL,
+                KEY idx_agendamentos_data_status (data, status, horario)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
         await criarBackup(conn);
 
         await conn.query(`
@@ -127,6 +150,13 @@ async function migrar() {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         `);
 
+        if (await indiceExiste(conn, 'clientes', 'uk_clientes_telefone')) {
+            await conn.query('ALTER TABLE clientes DROP INDEX uk_clientes_telefone');
+        }
+        if (!(await indiceExiste(conn, 'clientes', 'idx_clientes_telefone'))) {
+            await conn.query('ALTER TABLE clientes ADD INDEX idx_clientes_telefone (telefone)');
+        }
+
         if (!(await colunaExiste(conn, 'agendamentos', 'cliente_id'))) {
             await conn.query('ALTER TABLE agendamentos ADD COLUMN cliente_id INT UNSIGNED NULL AFTER id');
         }
@@ -139,6 +169,76 @@ async function migrar() {
                 REFERENCES clientes(id) ON DELETE SET NULL`);
         }
 
+        const colunasAgendamento = [
+            ['email', 'VARCHAR(190) NULL AFTER telefone'],
+            ['origem', "VARCHAR(20) NOT NULL DEFAULT 'site' AFTER observacoes"],
+            ['privacidade_versao', 'VARCHAR(20) NULL AFTER origem'],
+            ['privacidade_aceita_em', 'DATETIME NULL AFTER privacidade_versao'],
+            ['profissional_id', 'INT UNSIGNED NULL AFTER origem'],
+            ['motivo_cancelamento', 'VARCHAR(300) NULL AFTER status'],
+            ['forma_pagamento', 'VARCHAR(30) NULL AFTER pago'],
+            ['pago_em', 'DATETIME NULL AFTER forma_pagamento'],
+            ['atualizado_em', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER criadoEm'],
+        ];
+        for (const [nome, definicao] of colunasAgendamento) {
+            if (!(await colunaExiste(conn, 'agendamentos', nome))) {
+                await conn.query(`ALTER TABLE agendamentos ADD COLUMN ${nome} ${definicao}`);
+            }
+        }
+        if (!(await indiceExiste(conn, 'agendamentos', 'idx_agendamentos_data_status'))) {
+            await conn.query('ALTER TABLE agendamentos ADD INDEX idx_agendamentos_data_status (data, status, horario)');
+        }
+        if (!(await indiceExiste(conn, 'agendamentos', 'idx_agendamentos_profissional'))) {
+            await conn.query('ALTER TABLE agendamentos ADD INDEX idx_agendamentos_profissional (profissional_id)');
+        }
+        if (!(await constraintExiste(conn, 'agendamentos', 'fk_agendamentos_profissional'))) {
+            await conn.query(`ALTER TABLE agendamentos
+                ADD CONSTRAINT fk_agendamentos_profissional FOREIGN KEY (profissional_id)
+                REFERENCES usuarios(id) ON DELETE SET NULL`);
+        }
+
+        await conn.query(`
+            CREATE TABLE IF NOT EXISTS bloqueios_agenda (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                data DATE NOT NULL,
+                horario VARCHAR(20) NOT NULL DEFAULT '*',
+                motivo VARCHAR(180) NULL,
+                criado_por INT UNSIGNED NULL,
+                criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_bloqueios_data_horario (data, horario),
+                KEY idx_bloqueios_data (data),
+                CONSTRAINT fk_bloqueios_usuario FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
+        await conn.query(`
+            CREATE TABLE IF NOT EXISTS reservas_horario (
+                data DATE NOT NULL,
+                horario VARCHAR(20) NOT NULL,
+                agendamento_id INT NOT NULL,
+                criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (data, horario),
+                UNIQUE KEY uk_reservas_agendamento (agendamento_id),
+                CONSTRAINT fk_reservas_agendamento FOREIGN KEY (agendamento_id) REFERENCES agendamentos(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
+        await conn.query(`
+            CREATE TABLE IF NOT EXISTS auditoria (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                usuario_id INT UNSIGNED NULL,
+                acao VARCHAR(80) NOT NULL,
+                entidade VARCHAR(50) NOT NULL,
+                entidade_id VARCHAR(80) NULL,
+                detalhes JSON NULL,
+                ip VARCHAR(64) NULL,
+                criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_auditoria_data (criado_em),
+                KEY idx_auditoria_entidade (entidade, entidade_id),
+                CONSTRAINT fk_auditoria_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
         const [antigos] = await conn.query(
             `SELECT id, nome, telefone FROM agendamentos
              WHERE cliente_id IS NULL AND telefone IS NOT NULL AND telefone <> '' ORDER BY id`
@@ -146,17 +246,31 @@ async function migrar() {
         for (const item of antigos) {
             const telefone = String(item.telefone).replace(/\D/g, '').slice(0, 20);
             if (!telefone) continue;
-            await conn.execute(
-                `INSERT INTO clientes (nome, telefone) VALUES (?, ?)
-                 ON DUPLICATE KEY UPDATE nome = IF(CHAR_LENGTH(VALUES(nome)) > CHAR_LENGTH(nome), VALUES(nome), nome)`,
-                [String(item.nome || 'Paciente').trim().slice(0, 120), telefone]
+            const nome = String(item.nome || 'Paciente').trim().slice(0, 120);
+            let [[cliente]] = await conn.execute(
+                'SELECT id FROM clientes WHERE telefone = ? AND LOWER(TRIM(nome)) = LOWER(?) ORDER BY id LIMIT 1',
+                [telefone, nome]
             );
-            const [[cliente]] = await conn.execute('SELECT id FROM clientes WHERE telefone = ? LIMIT 1', [telefone]);
+            if (!cliente) {
+                const [novo] = await conn.execute('INSERT INTO clientes (nome, telefone) VALUES (?, ?)', [nome, telefone]);
+                cliente = { id: novo.insertId };
+            }
             if (cliente) await conn.execute('UPDATE agendamentos SET cliente_id = ? WHERE id = ?', [cliente.id, item.id]);
         }
 
+        await conn.query(
+            `INSERT IGNORE INTO reservas_horario (data, horario, agendamento_id)
+             SELECT data, horario, id FROM agendamentos
+             WHERE COALESCE(status, 'pendente') IN ('pendente', 'confirmada')
+             ORDER BY id`
+        );
+
         await conn.execute(
             `INSERT INTO schema_migrations (id) VALUES ('001_auth_clientes')
+             ON DUPLICATE KEY UPDATE id = VALUES(id)`
+        );
+        await conn.execute(
+            `INSERT INTO schema_migrations (id) VALUES ('002_agenda_producao')
              ON DUPLICATE KEY UPDATE id = VALUES(id)`
         );
         console.log(`✓ Migração concluída; ${antigos.length} agendamento(s) vinculado(s) a clientes.`);

@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#0f766e">
     <meta name="robots" content="noindex,nofollow">
     <title>Painel da clínica — Dra. Natyla Picoloto</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
+    <script src="/assets/react.production.min.js"></script>
+    <script src="/assets/react-dom.production.min.js"></script>
+    <script src="/assets/babel.min.js"></script>
     <style>
         .loader { border-top-color: transparent; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -33,6 +33,29 @@
         ? 'http://localhost:3001'
         : window.location.origin;
     const API = `${API_BASE}/api`;
+
+    const lerCookie = nome => document.cookie.split(';').map(p => p.trim()).find(p => p.startsWith(`${nome}=`))?.split('=').slice(1).join('=') || '';
+    async function apiFetch(caminho, opcoes = {}) {
+        const metodo = String(opcoes.method || 'GET').toUpperCase();
+        const headers = { ...(opcoes.headers || {}) };
+        if (!['GET','HEAD','OPTIONS'].includes(metodo)) {
+            const csrf = decodeURIComponent(lerCookie('clinica_csrf'));
+            if (csrf) headers['X-CSRF-Token'] = csrf;
+        }
+        const resposta = await fetch(caminho.startsWith('http') ? caminho : `${API}${caminho}`, {
+            ...opcoes,
+            headers,
+            credentials:'same-origin',
+        });
+        if (resposta.status === 401) window.dispatchEvent(new CustomEvent('clinica:sessao-expirada'));
+        return resposta;
+    }
+
+    async function respostaJson(resposta) {
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(dados.erro || 'Não foi possível concluir. Tente novamente.');
+        return dados;
+    }
 
     // Preços padrão para pré-preencher o modal (editável aqui)
     // Estes são apenas um ponto de partida — o valor final é sempre confirmado pela dentista
@@ -77,15 +100,25 @@
         return h === 'manha' ? '☀️ Manhã' : '🌙 Tarde';
     };
 
+    const STATUS_AGENDAMENTO = {
+        pendente:   { texto:'Aguardando confirmação', curto:'Aguardando', classe:'bg-amber-100 text-amber-700' },
+        confirmada: { texto:'Consulta confirmada', curto:'Confirmada', classe:'bg-blue-100 text-blue-700' },
+        concluida:  { texto:'Atendimento concluído', curto:'Concluída', classe:'bg-green-100 text-green-700' },
+        faltou:     { texto:'Paciente faltou', curto:'Faltou', classe:'bg-red-100 text-red-600' },
+        cancelada:  { texto:'Consulta cancelada', curto:'Cancelada', classe:'bg-slate-200 text-slate-600' },
+    };
+    const statusInfo = status => STATUS_AGENDAMENTO[status] || STATUS_AGENDAMENTO.pendente;
+    const HORARIOS_AGENDA = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
+
     // ─── AUTENTICAÇÃO ────────────────────────────────────────────────────────
     function AuthScreen({ modo, setModo, resetToken, cadastroDisponivel, onAutenticado }) {
         const [form, setForm] = useState({ nome:'', email:'', senha:'', confirmar:'', codigo:'' });
-        const [estadoAuth, setEstadoAuth] = useState({ loading:false, erro:null, mensagem:null, link:null });
+        const [estadoAuth, setEstadoAuth] = useState({ loading:false, erro:null, mensagem:null });
         const [mostrarSenha, setMostrarSenha] = useState(false);
 
         const atualizar = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
         const mudarModo = novo => {
-            setEstadoAuth({ loading:false, erro:null, mensagem:null, link:null });
+            setEstadoAuth({ loading:false, erro:null, mensagem:null });
             setForm(p => ({ ...p, senha:'', confirmar:'', codigo:'' }));
             setModo(novo);
         };
@@ -104,29 +137,28 @@
             };
             const config = configs[modo];
             if (!config) return;
-            setEstadoAuth({ loading:true, erro:null, mensagem:null, link:null });
+            setEstadoAuth({ loading:true, erro:null, mensagem:null });
             try {
-                const r = await fetch(`${API}${config.rota}`, {
+                const r = await apiFetch(config.rota, {
                     method:'POST',
                     headers:{ 'Content-Type':'application/json' },
-                    credentials:'same-origin',
                     body:JSON.stringify(config.body),
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) throw new Error(d.erro || 'Não foi possível continuar.');
                 if (modo === 'login' || modo === 'cadastro') return onAutenticado(d.usuario);
                 if (modo === 'esqueci') {
-                    setEstadoAuth({ loading:false, erro:null, mensagem:d.mensagem, link:d.linkDesenvolvimento || null });
+                    setEstadoAuth({ loading:false, erro:null, mensagem:d.mensagem });
                     setModo('email-enviado');
                     return;
                 }
                 if (modo === 'reset') {
                     history.replaceState({}, '', '/painel');
-                    setEstadoAuth({ loading:false, erro:null, mensagem:d.mensagem, link:null });
+                    setEstadoAuth({ loading:false, erro:null, mensagem:d.mensagem });
                     setModo('senha-alterada');
                 }
             } catch (err) {
-                setEstadoAuth({ loading:false, erro:err.message === 'Failed to fetch' ? 'Servidor indisponível. Confirme se ele está iniciado.' : err.message, mensagem:null, link:null });
+                setEstadoAuth({ loading:false, erro:err.message === 'Failed to fetch' ? 'Servidor indisponível. Confirme se ele está iniciado.' : err.message, mensagem:null });
             }
         };
 
@@ -157,11 +189,6 @@
                     {(modo === 'email-enviado' || modo === 'senha-alterada') ? (
                         <div className="space-y-4 text-center">
                             {estadoAuth.mensagem && <p className="text-sm text-slate-600 bg-slate-50 p-4 rounded-xl">{estadoAuth.mensagem}</p>}
-                            {estadoAuth.link && (
-                                <a href={estadoAuth.link} className="block bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-bold break-words">
-                                    Abrir link local de recuperação
-                                </a>
-                            )}
                             <button onClick={() => mudarModo('login')} className="w-full h-12 bg-slate-900 text-white font-bold rounded-xl hover:bg-teal-700 transition">Voltar para o login</button>
                         </div>
                     ) : (
@@ -182,18 +209,18 @@
                                 <div>
                                     <label htmlFor="auth-senha" className="block text-xs font-bold text-slate-600 mb-1.5">Senha</label>
                                     <div className="relative">
-                                        <input id="auth-senha" name="senha" type={mostrarSenha ? 'text' : 'password'} value={form.senha} onChange={atualizar} className={`${inputClass} pr-12`} autoComplete={modo === 'login' ? 'current-password' : 'new-password'} required minLength="8" />
+                                        <input id="auth-senha" name="senha" type={mostrarSenha ? 'text' : 'password'} value={form.senha} onChange={atualizar} className={`${inputClass} pr-12`} autoComplete={modo === 'login' ? 'current-password' : 'new-password'} required minLength="12" />
                                         <button type="button" onClick={() => setMostrarSenha(v => !v)} aria-label={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'} className="absolute right-1.5 top-1.5 w-9 h-9 text-slate-400 hover:text-teal-600 rounded-lg">
                                             <i className={`fa-regular ${mostrarSenha ? 'fa-eye-slash' : 'fa-eye'}`}></i>
                                         </button>
                                     </div>
-                                    {modo !== 'login' && <p className="text-[11px] text-slate-400 mt-1">Mínimo de 8 caracteres, com letra e número.</p>}
+                                    {modo !== 'login' && <p className="text-xs text-slate-500 mt-1">Use 12 ou mais caracteres, com pelo menos uma letra e um número.</p>}
                                 </div>
                             )}
                             {(modo === 'cadastro' || modo === 'reset') && (
                                 <div>
                                     <label htmlFor="auth-confirmar" className="block text-xs font-bold text-slate-600 mb-1.5">Confirmar senha</label>
-                                    <input id="auth-confirmar" name="confirmar" type={mostrarSenha ? 'text' : 'password'} value={form.confirmar} onChange={atualizar} className={inputClass} autoComplete="new-password" required minLength="8" />
+                                    <input id="auth-confirmar" name="confirmar" type={mostrarSenha ? 'text' : 'password'} value={form.confirmar} onChange={atualizar} className={inputClass} autoComplete="new-password" required minLength="12" />
                                 </div>
                             )}
                             {modo === 'cadastro' && (
@@ -238,10 +265,9 @@
             if (isNaN(v) || v < 0) { setErro('Informe um valor válido.'); return; }
             setLoading(true); setErro(null);
             try {
-                const r = await fetch(`${API}/agendamentos/${item.id}/financeiro`, {
+                const r = await apiFetch(`/agendamentos/${item.id}/financeiro`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials: 'same-origin',
                     body: JSON.stringify({ valor: v, pago })
                 });
                 const data = await r.json().catch(() => ({}));
@@ -301,7 +327,11 @@
 
     // ─── APP ─────────────────────────────────────────────────────────────────
     function App() {
-        const resetToken = new URLSearchParams(window.location.search).get('reset');
+        const resetTokenRef = useRef(
+            new URLSearchParams(window.location.hash.replace(/^#/, '')).get('reset')
+            || new URLSearchParams(window.location.search).get('reset')
+        );
+        const resetToken = resetTokenRef.current;
         const [token,        setToken]        = useState(false);
         const [usuario,      setUsuario]      = useState(null);
         const [authMode,     setAuthMode]     = useState(resetToken ? 'reset' : 'login');
@@ -321,19 +351,48 @@
         const [finLoading,   setFinLoading]   = useState(false);
         const [sidebarOpen,  setSidebarOpen]  = useState(false);
         const [conexao,      setConexao]      = useState('conectando');
-        const [novoUsuario,  setNovoUsuario]  = useState({ nome:'', email:'', senha:'', papel:'dentista' });
+        const [novoUsuario,  setNovoUsuario]  = useState({ nome:'', email:'', papel:'dentista' });
         const [equipeEstado, setEquipeEstado] = useState({ loading:false, erro:null, sucesso:null });
-        const [novoCliente,  setNovoCliente]  = useState({ nome:'', telefone:'', email:'' });
+        const [novoCliente,  setNovoCliente]  = useState({ id:null, nome:'', telefone:'', email:'', data_nascimento:'' });
         const [clienteEstado,setClienteEstado]= useState({ aberto:false, loading:false, erro:null });
+        const [editorAgenda, setEditorAgenda] = useState({ aberto:false, id:null, nome:'', telefone:'', email:'', data:'', horario:'', preferencia:'orcamento', observacoes:'', status:'confirmada' });
+        const [agendaSalvando,setAgendaSalvando]=useState(false);
+        const [bloqueios,    setBloqueios]     = useState([]);
+        const [bloqueioNovo, setBloqueioNovo] = useState({ horario:'', motivo:'' });
+        const [bloqueioSalvando,setBloqueioSalvando]=useState(false);
+        const [sistemaStatus,  setSistemaStatus]  = useState(null);
+        const [aviso,         setAviso]        = useState(null);
         const pollingRef = useRef(null);
+        const avisoTimerRef = useRef(null);
+
+        const avisar = (mensagem, tipo = 'sucesso') => {
+            clearTimeout(avisoTimerRef.current);
+            setAviso({ mensagem, tipo });
+            avisoTimerRef.current = setTimeout(() => setAviso(null), 5000);
+        };
+
+        useEffect(() => {
+            if (resetToken) window.history.replaceState({}, document.title, '/painel');
+        }, []);
+
+        useEffect(() => {
+            const expirar = () => {
+                setToken(false);
+                setUsuario(null);
+                setAuthMode('login');
+                setEstado({ loading:false, erro:'Sua sessão expirou. Entre novamente.', validando:false });
+            };
+            window.addEventListener('clinica:sessao-expirada', expirar);
+            return () => window.removeEventListener('clinica:sessao-expirada', expirar);
+        }, []);
 
         useEffect(() => {
             let ativo = true;
             const iniciarAuth = async () => {
                 try {
                     const [statusR, meR] = await Promise.all([
-                        fetch(`${API}/auth/status`, { credentials:'same-origin' }),
-                        fetch(`${API}/auth/me`, { credentials:'same-origin' }),
+                        apiFetch('/auth/status'),
+                        apiFetch('/auth/me'),
                     ]);
                     const status = await statusR.json().catch(() => ({}));
                     if (!ativo) return;
@@ -369,8 +428,8 @@
             if (!token) return;
             try {
                 const [r, clientesR] = await Promise.all([
-                    fetch(`${API}/agendamentos`, { credentials:'same-origin' }),
-                    fetch(`${API}/clientes`, { credentials:'same-origin' }),
+                    apiFetch('/agendamentos'),
+                    apiFetch('/clientes'),
                 ]);
                 if (r.ok && clientesR.ok) {
                     setAgendamentos(await r.json());
@@ -390,7 +449,7 @@
             if (!token) return;
             setFinLoading(true);
             try {
-                const r = await fetch(`${API}/financeiro/resumo?mes=${mes}`, { credentials:'same-origin' });
+                const r = await apiFetch(`/financeiro/resumo?mes=${mes}`);
                 if (r.ok) setResumoFin(await r.json());
                 else setResumoFin(null);
             } catch { setResumoFin(null); }
@@ -411,7 +470,7 @@
         const buscarUsuarios = useCallback(async () => {
             if (!token || usuario?.papel !== 'admin') return;
             try {
-                const r = await fetch(`${API}/usuarios`, { credentials:'same-origin' });
+                const r = await apiFetch('/usuarios');
                 if (r.ok) setUsuarios(await r.json());
             } catch {}
         }, [token, usuario]);
@@ -420,28 +479,48 @@
             if (telaAtiva === 'equipe') buscarUsuarios();
         }, [telaAtiva, buscarUsuarios]);
 
+        const buscarStatusSistema = useCallback(async () => {
+            if (!token || usuario?.papel !== 'admin') return;
+            try {
+                const r = await apiFetch('/sistema/status');
+                if (r.ok) setSistemaStatus(await r.json());
+            } catch {}
+        }, [token, usuario]);
+
+        useEffect(() => {
+            if (telaAtiva === 'configuracao') buscarStatusSistema();
+        }, [telaAtiva, buscarStatusSistema]);
+
+        const testarEmail = async () => {
+            try {
+                const r = await apiFetch('/sistema/testar-email', { method:'POST' });
+                const d = await respostaJson(r);
+                avisar(d.mensagem || `E-mail de teste enviado para ${usuario.email}.`);
+            } catch (err) { avisar(err.message, 'erro'); }
+        };
+
         useEffect(() => { setTermoBusca(''); }, [telaAtiva]);
 
         const criarUsuario = async e => {
             e.preventDefault();
             setEquipeEstado({ loading:true, erro:null, sucesso:null });
             try {
-                const r = await fetch(`${API}/usuarios`, {
-                    method:'POST', headers:{ 'Content-Type':'application/json' }, credentials:'same-origin',
+                const r = await apiFetch('/usuarios', {
+                    method:'POST', headers:{ 'Content-Type':'application/json' },
                     body:JSON.stringify(novoUsuario),
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) throw new Error(d.erro || 'Não foi possível criar o usuário.');
-                setNovoUsuario({ nome:'', email:'', senha:'', papel:'dentista' });
-                setEquipeEstado({ loading:false, erro:null, sucesso:'Acesso criado com sucesso.' });
+                setNovoUsuario({ nome:'', email:'', papel:'dentista' });
+                setEquipeEstado({ loading:false, erro:null, sucesso:'Convite enviado. A pessoa criará a própria senha pelo e-mail.' });
                 buscarUsuarios();
             } catch (err) { setEquipeEstado({ loading:false, erro:err.message, sucesso:null }); }
         };
 
         const alterarUsuario = async (id, ativo) => {
             try {
-                const r = await fetch(`${API}/usuarios/${id}/status`, {
-                    method:'PATCH', headers:{ 'Content-Type':'application/json' }, credentials:'same-origin',
+                const r = await apiFetch(`/usuarios/${id}/status`, {
+                    method:'PATCH', headers:{ 'Content-Type':'application/json' },
                     body:JSON.stringify({ ativo }),
                 });
                 const d = await r.json().catch(() => ({}));
@@ -454,21 +533,88 @@
             e.preventDefault();
             setClienteEstado(p => ({ ...p, loading:true, erro:null }));
             try {
-                const r = await fetch(`${API}/clientes`, {
-                    method:'POST', headers:{ 'Content-Type':'application/json' }, credentials:'same-origin',
+                const r = await apiFetch(novoCliente.id ? `/clientes/${novoCliente.id}` : '/clientes', {
+                    method:novoCliente.id ? 'PUT' : 'POST', headers:{ 'Content-Type':'application/json' },
                     body:JSON.stringify(novoCliente),
                 });
                 const d = await r.json().catch(() => ({}));
                 if (!r.ok) throw new Error(d.erro || 'Não foi possível cadastrar o paciente.');
-                setNovoCliente({ nome:'', telefone:'', email:'' });
+                setNovoCliente({ id:null, nome:'', telefone:'', email:'', data_nascimento:'' });
                 setClienteEstado({ aberto:false, loading:false, erro:null });
+                avisar(novoCliente.id ? 'Dados do paciente atualizados.' : 'Paciente cadastrado.');
                 buscarDados();
             } catch (err) { setClienteEstado(p => ({ ...p, loading:false, erro:err.message })); }
         };
 
+        const abrirNovoAgendamento = () => setEditorAgenda({
+            aberto:true, id:null, nome:'', telefone:'', email:'', data:dataSel || hojeStr(),
+            horario:'', preferencia:'orcamento', observacoes:'', status:'confirmada',
+        });
+
+        const abrirEdicaoAgendamento = item => setEditorAgenda({
+            aberto:true, id:item.id, nome:item.nome || '', telefone:item.telefone || '', email:item.email || '',
+            data:isoParaDia(item.data), horario:item.horario || '', preferencia:item.preferencia || 'outro',
+            observacoes:item.observacoes || '', status:item.status || 'pendente',
+        });
+
+        const salvarAgendamento = async e => {
+            e.preventDefault();
+            setAgendaSalvando(true);
+            try {
+                const corpo = { ...editorAgenda, telefone:String(editorAgenda.telefone).replace(/\D/g,'') };
+                const r = await apiFetch(editorAgenda.id ? `/agendamentos/${editorAgenda.id}` : '/agendamentos/interno', {
+                    method:editorAgenda.id ? 'PUT' : 'POST',
+                    headers:{ 'Content-Type':'application/json' },
+                    body:JSON.stringify(corpo),
+                });
+                const d = await respostaJson(r);
+                setEditorAgenda(p => ({ ...p, aberto:false }));
+                avisar(editorAgenda.id ? 'Consulta atualizada com sucesso.' : `Consulta criada. ${d.protocolo || ''}`);
+                await buscarDados();
+            } catch (err) { avisar(err.message, 'erro'); }
+            finally { setAgendaSalvando(false); }
+        };
+
+        const buscarBloqueios = useCallback(async () => {
+            if (!token) return;
+            try {
+                const r = await apiFetch('/agenda/bloqueios');
+                if (r.ok) setBloqueios(await r.json());
+            } catch {}
+        }, [token]);
+
+        useEffect(() => {
+            if (telaAtiva === 'agenda') buscarBloqueios();
+        }, [telaAtiva, buscarBloqueios]);
+
+        const criarBloqueio = async e => {
+            e.preventDefault();
+            setBloqueioSalvando(true);
+            try {
+                const r = await apiFetch('/agenda/bloqueios', {
+                    method:'POST', headers:{ 'Content-Type':'application/json' },
+                    body:JSON.stringify({ data:dataSel, horario:bloqueioNovo.horario || null, motivo:bloqueioNovo.motivo }),
+                });
+                await respostaJson(r);
+                setBloqueioNovo({ horario:'', motivo:'' });
+                avisar(bloqueioNovo.horario ? 'Horário bloqueado.' : 'Dia inteiro bloqueado.');
+                await buscarBloqueios();
+            } catch (err) { avisar(err.message, 'erro'); }
+            finally { setBloqueioSalvando(false); }
+        };
+
+        const removerBloqueio = async id => {
+            try {
+                const r = await apiFetch(`/agenda/bloqueios/${id}`, { method:'DELETE' });
+                if (!r.ok && r.status !== 204) await respostaJson(r);
+                setBloqueios(p => p.filter(b => b.id !== id));
+                avisar('Período liberado para agendamento.');
+            } catch (err) { avisar(err.message, 'erro'); }
+        };
+
         const sair = async () => {
             clearInterval(pollingRef.current);
-            try { await fetch(`${API}/auth/logout`, { method:'POST', credentials:'same-origin' }); } catch {}
+            try { await apiFetch('/auth/logout', { method:'POST' }); } catch {}
             setToken(null);
             setUsuario(null);
             setAgendamentos([]);
@@ -478,37 +624,27 @@
             setEstado({ loading: false, erro: null, validando: false });
         };
 
-        // ── Apagar agendamento
-        const apagar = async id => {
-            if (!confirm('Apagar este agendamento do sistema?')) return;
-            try {
-                const r = await fetch(`${API}/agendamentos/${id}`, { method: 'DELETE', credentials:'same-origin' });
-                if (r.ok || r.status === 204) {
-                    setAgendamentos(p => p.filter(a => a.id !== id));
-                } else {
-                    alert('Erro ao apagar agendamento.');
-                }
-            } catch { setConexao('offline'); alert('Sem conexão. O agendamento não foi apagado.'); }
-        };
-
-        // ── Atualizar status (otimista)
+        // ── Atualizar o andamento da consulta
         const atualizarStatus = async (id, novoStatus) => {
-            setAgendamentos(p => p.map(a => a.id === id ? { ...a, status: novoStatus } : a));
+            const atual = agendamentos.find(a => a.id === id);
+            let motivo = null;
+            if (novoStatus === 'cancelada') {
+                motivo = window.prompt('Informe o motivo do cancelamento. Ele ficará salvo no histórico:');
+                if (motivo === null) return;
+                if (motivo.trim().length < 3) { avisar('Escreva um motivo para cancelar.', 'erro'); return; }
+            }
             try {
-                const r = await fetch(`${API}/agendamentos/${id}/status`, {
+                const r = await apiFetch(`/agendamentos/${id}/status`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials:'same-origin',
-                    body: JSON.stringify({ status: novoStatus })
+                    body: JSON.stringify({ status: novoStatus, motivo })
                 });
-                if (!r.ok) {
-                    const d = await r.json();
-                    throw new Error(d.erro || 'Erro desconhecido');
-                }
+                await respostaJson(r);
+                setAgendamentos(p => p.map(a => a.id === id ? { ...a, status: novoStatus, motivo_cancelamento:motivo } : a));
+                avisar(`${atual?.nome || 'Consulta'}: ${statusInfo(novoStatus).texto}.`);
             } catch (err) {
-                setConexao('offline');
-                alert(`Erro ao salvar status: ${err.message}`);
-                buscarDados(); // reverte
+                avisar(err.message, 'erro');
+                buscarDados();
             }
         };
 
@@ -522,8 +658,8 @@
             if (telaAtiva === 'financeiro') buscarFinanceiro(mesFin);
         };
 
-        const abrirProntuario = tel => {
-            const p = pacientesUnicos.find(x => x.telefone === tel);
+        const abrirProntuario = clienteId => {
+            const p = pacientesUnicos.find(x => String(x.id) === String(clienteId));
             setPacienteSel(p || null);
             setTelaAtiva('prontuarios');
         };
@@ -537,11 +673,12 @@
             return `${a}-${m}-${String(d).padStart(2,'0')}`;
         };
         const agsDoDia = agendamentos.filter(a => isoParaDia(a.data) === dataSel);
+        const bloqueiosDoDia = bloqueios.filter(b => isoParaDia(b.data) === dataSel);
         const temAgs   = d => agendamentos.some(a => isoParaDia(a.data) === diaParaIso(d));
 
         // ── Pacientes persistidos no banco, enriquecidos com o histórico de agenda
         const mapaPacientes = clientes.reduce((acc, cliente) => {
-            acc[cliente.telefone] = {
+            acc[`cliente-${cliente.id}`] = {
                 ...cliente,
                 totalConsultas: Number(cliente.totalConsultas || 0),
                 ultimaConsulta: cliente.ultimaConsulta || null,
@@ -550,8 +687,8 @@
             return acc;
         }, {});
         agendamentos.forEach(cur => {
-            const k = cur.telefone;
-            if (!mapaPacientes[k]) mapaPacientes[k] = { nome:cur.nome, telefone:k, email:null, totalConsultas:0, ultimaConsulta:null, historico:[] };
+            const k = cur.cliente_id ? `cliente-${cur.cliente_id}` : `agendamento-${cur.id}`;
+            if (!mapaPacientes[k]) mapaPacientes[k] = { id:cur.cliente_id, nome:cur.nome, telefone:cur.telefone, email:cur.email || null, totalConsultas:0, ultimaConsulta:null, historico:[] };
             mapaPacientes[k].historico.push(cur);
             mapaPacientes[k].totalConsultas = mapaPacientes[k].historico.length;
             if (!mapaPacientes[k].ultimaConsulta || new Date(cur.data) > new Date(mapaPacientes[k].ultimaConsulta)) mapaPacientes[k].ultimaConsulta = cur.data;
@@ -587,8 +724,9 @@
             { id: 'agenda',      icon: 'fa-calendar-check', text: 'Agenda' },
             { id: 'pacientes',   icon: 'fa-users',          text: 'Pacientes' },
             { id: 'prontuarios', icon: 'fa-clock-rotate-left', text: 'Histórico' },
-            { id: 'financeiro',  icon: 'fa-wallet',         text: 'Financeiro' },
+            ...(usuario?.papel !== 'recepcao' ? [{ id:'financeiro', icon:'fa-wallet', text:'Financeiro' }] : []),
             ...(usuario?.papel === 'admin' ? [{ id:'equipe', icon:'fa-user-shield', text:'Equipe' }] : []),
+            ...(usuario?.papel === 'admin' ? [{ id:'configuracao', icon:'fa-gear', text:'Configuração' }] : []),
         ];
 
         return (
@@ -600,6 +738,11 @@
                         onSalvar={aoSalvarFinanceiro}
                         onFechar={() => setModalFin(null)}
                     />
+                )}
+                {aviso && (
+                    <div role="status" aria-live="polite" className={`fixed top-4 right-4 left-4 sm:left-auto z-[70] sm:max-w-sm px-5 py-4 rounded-2xl shadow-2xl border text-sm font-semibold ${aviso.tipo === 'erro' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                        <i className={`fa-solid ${aviso.tipo === 'erro' ? 'fa-circle-exclamation' : 'fa-circle-check'} mr-2`}></i>{aviso.mensagem}
+                    </div>
                 )}
 
                 {sidebarOpen && (
@@ -668,7 +811,7 @@
                                         { icon:'fa-calendar-day', label:'Consultas hoje', valor:agendamentosHoje.length, detalhe:'Ver agenda do dia', tela:'agenda' },
                                         { icon:'fa-hourglass-half', label:'A confirmar', valor:proximosAgendamentos.length, detalhe:'Próximos horários', tela:'inicio' },
                                         { icon:'fa-users', label:'Pacientes', valor:pacientesUnicos.length, detalhe:'Contatos únicos', tela:'pacientes' },
-                                        { icon:'fa-hand-holding-dollar', label:'Pagamentos pendentes', valor:pagamentosPendentes.length, detalhe:'Revisar financeiro', tela:'financeiro' },
+                                        ...(usuario?.papel !== 'recepcao' ? [{ icon:'fa-hand-holding-dollar', label:'Pagamentos pendentes', valor:pagamentosPendentes.length, detalhe:'Revisar financeiro', tela:'financeiro' }] : []),
                                     ].map((c, i) => (
                                         <div key={i} onClick={() => setTelaAtiva(c.tela)}
                                             className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md hover:border-teal-100 transition cursor-pointer flex flex-col gap-2 group">
@@ -703,15 +846,18 @@
                                                         <p className="text-xs text-slate-500 mt-1 capitalize">{item.preferencia || 'Avaliação geral'}</p>
                                                     </div>
                                                     <select aria-label={`Status de ${item.nome}`} value={item.status || 'pendente'} onChange={e => atualizarStatus(item.id, e.target.value)} className="bg-white border border-slate-200 text-slate-600 text-[11px] rounded-lg px-2 py-1 outline-none">
-                                                        <option value="pendente">Aguardando</option>
-                                                        <option value="confirmada">Compareceu</option>
-                                                        <option value="faltou">Faltou</option>
+                                                        <option value="pendente">Aguardando confirmação</option>
+                                                        <option value="confirmada">Consulta confirmada</option>
+                                                        <option value="concluida">Atendimento concluído</option>
+                                                        <option value="faltou">Paciente faltou</option>
+                                                        <option value="cancelada">Consulta cancelada</option>
                                                     </select>
                                                 </div>
-                                                <div className="flex items-center gap-2 mt-4">
-                                                    <a aria-label={`WhatsApp de ${item.nome}`} href={`https://wa.me/55${item.telefone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><i className="fa-brands fa-whatsapp"></i></a>
-                                                    <button onClick={() => abrirProntuario(item.telefone)} className="flex-1 bg-slate-900 text-white h-9 rounded-xl text-xs font-bold">Ver histórico</button>
-                                                    <button aria-label={`Apagar agendamento de ${item.nome}`} onClick={() => apagar(item.id)} className="w-9 h-9 border border-red-200 text-red-500 rounded-xl"><i className="fa-solid fa-trash"></i></button>
+                                                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                                                    <a aria-label={`WhatsApp de ${item.nome}`} href={`https://wa.me/55${item.telefone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><i className="fa-brands fa-whatsapp"></i></a>
+                                                    <button onClick={() => { abrirEdicaoAgendamento(item); setTelaAtiva('agenda'); }} className="flex-1 border border-teal-200 text-teal-700 h-10 rounded-xl text-xs font-bold"><i className="fa-solid fa-pen mr-1"></i>Editar</button>
+                                                    <button onClick={() => abrirProntuario(item.cliente_id)} className="flex-1 bg-slate-900 text-white h-10 rounded-xl text-xs font-bold">Ver histórico</button>
+                                                    {item.status !== 'cancelada' && <button aria-label={`Cancelar consulta de ${item.nome}`} onClick={() => atualizarStatus(item.id, 'cancelada')} className="h-10 px-3 border border-red-200 text-red-600 rounded-xl text-xs font-bold"><i className="fa-solid fa-ban mr-1"></i>Cancelar</button>}
                                                 </div>
                                             </article>
                                         ))}
@@ -747,9 +893,11 @@
                                                             <select value={item.status || 'pendente'}
                                                                 onChange={e => atualizarStatus(item.id, e.target.value)}
                                                                 className="bg-white border border-slate-200 text-slate-600 text-xs rounded-lg px-2 py-1 outline-none">
-                                                                <option value="pendente">⏳ Aguardando</option>
-                                                                <option value="confirmada">✅ Compareceu</option>
-                                                                <option value="faltou">❌ Faltou</option>
+                                                                <option value="pendente">Aguardando confirmação</option>
+                                                                <option value="confirmada">Consulta confirmada</option>
+                                                                <option value="concluida">Atendimento concluído</option>
+                                                                <option value="faltou">Paciente faltou</option>
+                                                                <option value="cancelada">Consulta cancelada</option>
                                                             </select>
                                                         </td>
                                                         <td className="px-7 py-4">
@@ -762,14 +910,16 @@
                                                         </td>
                                                         <td className="px-7 py-4 text-right">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <button onClick={() => abrirProntuario(item.telefone)}
+                                                                <button onClick={() => { abrirEdicaoAgendamento(item); setTelaAtiva('agenda'); }}
+                                                                    className="border border-teal-200 text-teal-700 hover:bg-teal-50 px-3 py-2 rounded-lg text-xs font-bold transition"><i className="fa-solid fa-pen mr-1"></i>Editar</button>
+                                                                <button onClick={() => abrirProntuario(item.cliente_id)}
                                                                     className="bg-slate-900 text-white hover:bg-teal-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm transition">
                                                                     <i className="fa-solid fa-notes-medical"></i> Ficha
                                                                 </button>
-                                                                <button onClick={() => apagar(item.id)}
-                                                                    className="border border-red-200 text-red-400 hover:bg-red-50 px-2.5 py-1.5 rounded-lg text-xs font-bold transition">
-                                                                    <i className="fa-solid fa-trash"></i>
-                                                                </button>
+                                                                {item.status !== 'cancelada' && <button onClick={() => atualizarStatus(item.id, 'cancelada')}
+                                                                    className="border border-red-200 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg text-xs font-bold transition">
+                                                                    <i className="fa-solid fa-ban mr-1"></i> Cancelar
+                                                                </button>}
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -783,6 +933,61 @@
 
                         {/* ════ AGENDA ════ */}
                         {telaAtiva === 'agenda' && (
+                            <>
+                            <div className="flex items-center justify-between gap-3 flex-wrap mb-5">
+                                <div>
+                                    <h2 className="text-2xl font-extrabold text-slate-900">Agenda da clínica</h2>
+                                    <p className="text-sm text-slate-500 mt-1">Clique em um dia para ver, criar ou bloquear horários.</p>
+                                </div>
+                                <button type="button" onClick={abrirNovoAgendamento} className="h-12 px-5 bg-teal-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-teal-700">
+                                    <i className="fa-solid fa-plus mr-2"></i>Nova consulta
+                                </button>
+                            </div>
+
+                            {editorAgenda.aberto && (
+                                <form onSubmit={salvarAgendamento} className="bg-white border-2 border-teal-100 rounded-3xl p-5 md:p-7 shadow-sm mb-6">
+                                    <div className="flex items-start justify-between gap-4 mb-5">
+                                        <div>
+                                            <p className="text-xs uppercase tracking-widest text-teal-600 font-bold">{editorAgenda.id ? 'Alterar consulta' : 'Novo agendamento'}</p>
+                                            <h3 className="text-xl font-extrabold text-slate-900 mt-1">{editorAgenda.id ? editorAgenda.nome : 'Preencha os dados principais'}</h3>
+                                        </div>
+                                        <button type="button" onClick={() => setEditorAgenda(p => ({...p,aberto:false}))} className="w-11 h-11 rounded-xl border border-slate-200 text-slate-500" aria-label="Fechar formulário"><i className="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <label className="text-xs font-bold text-slate-600">Nome do paciente
+                                            <input required value={editorAgenda.nome} onChange={e => setEditorAgenda(p => ({...p,nome:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none" />
+                                        </label>
+                                        <label className="text-xs font-bold text-slate-600">WhatsApp com DDD
+                                            <input required inputMode="numeric" value={editorAgenda.telefone} onChange={e => setEditorAgenda(p => ({...p,telefone:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none" />
+                                        </label>
+                                        <label className="text-xs font-bold text-slate-600">E-mail (opcional)
+                                            <input type="email" value={editorAgenda.email} onChange={e => setEditorAgenda(p => ({...p,email:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none" />
+                                        </label>
+                                        <label className="text-xs font-bold text-slate-600">Motivo da consulta
+                                            <select value={editorAgenda.preferencia} onChange={e => setEditorAgenda(p => ({...p,preferencia:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none">
+                                                <option value="orcamento">Avaliação / orçamento</option><option value="limpeza">Limpeza</option><option value="dor">Dor ou urgência</option><option value="estetica">Estética</option><option value="implante">Implante</option><option value="outro">Outro</option>
+                                            </select>
+                                        </label>
+                                        <label className="text-xs font-bold text-slate-600">Data
+                                            <input required type="date" value={editorAgenda.data} onChange={e => setEditorAgenda(p => ({...p,data:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none" />
+                                        </label>
+                                        <label className="text-xs font-bold text-slate-600">Horário
+                                            <select required value={editorAgenda.horario} onChange={e => setEditorAgenda(p => ({...p,horario:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none"><option value="">Selecione</option>{HORARIOS_AGENDA.map(h => <option key={h}>{h}</option>)}</select>
+                                        </label>
+                                        {!editorAgenda.id && <label className="text-xs font-bold text-slate-600">Situação inicial
+                                            <select value={editorAgenda.status} onChange={e => setEditorAgenda(p => ({...p,status:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none"><option value="confirmada">Já confirmada</option><option value="pendente">Aguardando confirmação</option></select>
+                                        </label>}
+                                        {usuario?.papel !== 'recepcao' && <label className="text-xs font-bold text-slate-600 sm:col-span-2">Observação interna (opcional)
+                                            <input value={editorAgenda.observacoes} onChange={e => setEditorAgenda(p => ({...p,observacoes:e.target.value}))} maxLength="1000" className="mt-1.5 w-full h-12 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-normal focus:border-teal-500 outline-none" />
+                                        </label>}
+                                    </div>
+                                    <div className="flex justify-end gap-3 mt-5">
+                                        <button type="button" onClick={() => setEditorAgenda(p => ({...p,aberto:false}))} className="h-12 px-5 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm">Cancelar</button>
+                                        <button disabled={agendaSalvando} className="h-12 px-6 rounded-xl bg-slate-900 text-white font-bold text-sm disabled:opacity-60">{agendaSalvando ? 'Salvando...' : editorAgenda.id ? 'Salvar alterações' : 'Criar consulta'}</button>
+                                    </div>
+                                </form>
+                            )}
+
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-7">
                                 <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 p-7">
                                     <div className="flex items-center justify-between mb-6">
@@ -811,11 +1016,11 @@
                                         {Array.from({ length: diasNoMes }).map((_,i) => {
                                             const dia = i+1, iso = diaParaIso(dia), isSel = dataSel === iso;
                                             return (
-                                                <div key={dia} onClick={() => setDataSel(iso)}
+                                                <button type="button" key={dia} onClick={() => setDataSel(iso)} aria-pressed={isSel} aria-label={`${dia} ${mesAtual.toLocaleDateString('pt-BR', { month:'long' })}`}
                                                     className={`h-16 rounded-xl border p-1.5 cursor-pointer flex flex-col justify-between ${isSel ? 'border-teal-500 bg-teal-50' : 'border-slate-100 hover:border-teal-200 bg-white'}`}>
                                                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${isSel ? 'text-teal-700' : 'text-slate-600'}`}>{dia}</span>
                                                     {temAgs(dia) && <span className="w-2 h-2 bg-teal-500 rounded-full self-end"></span>}
-                                                </div>
+                                                </button>
                                             );
                                         })}
                                     </div>
@@ -835,13 +1040,32 @@
                                                 <p className="text-slate-400 text-xs ml-3 mt-0.5">
                                                     <i className="fa-brands fa-whatsapp text-green-400 mr-1"></i>{ag.telefone}
                                                 </p>
-                                                <p className="text-slate-500 text-xs ml-3 mt-0.5 capitalize">{ag.preferencia || 'Avaliação Geral'}</p>
-                                                <p className="text-teal-500 text-xs ml-3 font-mono">{formatarHorario(ag.horario)}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                                 <p className="text-slate-500 text-xs ml-3 mt-0.5 capitalize">{ag.preferencia || 'Avaliação Geral'}</p>
+                                                 <p className="text-teal-500 text-xs ml-3 font-mono">{formatarHorario(ag.horario)}</p>
+                                                 <div className="ml-3 mt-3 flex items-center gap-2 flex-wrap">
+                                                     <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${statusInfo(ag.status).classe}`}>{statusInfo(ag.status).curto}</span>
+                                                     <button type="button" onClick={() => abrirEdicaoAgendamento(ag)} className="h-9 px-3 rounded-lg bg-white/10 text-white text-xs font-bold hover:bg-white/20"><i className="fa-solid fa-pen mr-1"></i>Editar</button>
+                                                 </div>
+                                             </div>
+                                         ))}
+                                     </div>
+                                     <div className="border-t border-slate-700 mt-5 pt-5">
+                                         <h4 className="text-sm font-bold text-white"><i className="fa-solid fa-calendar-xmark text-amber-400 mr-2"></i>Bloquear período</h4>
+                                         <p className="text-xs text-slate-400 mt-1">Use para almoço, compromisso, feriado ou férias.</p>
+                                         <form onSubmit={criarBloqueio} className="mt-3 space-y-2">
+                                             <select value={bloqueioNovo.horario} onChange={e => setBloqueioNovo(p => ({...p,horario:e.target.value}))} className="w-full h-11 rounded-xl bg-slate-800 border border-slate-700 px-3 text-sm text-white">
+                                                 <option value="">Dia inteiro</option>{HORARIOS_AGENDA.map(h => <option key={h}>{h}</option>)}
+                                             </select>
+                                             <input required placeholder="Motivo, por exemplo: congresso" value={bloqueioNovo.motivo} onChange={e => setBloqueioNovo(p => ({...p,motivo:e.target.value}))} className="w-full h-11 rounded-xl bg-slate-800 border border-slate-700 px-3 text-sm text-white placeholder:text-slate-500" />
+                                             <button disabled={bloqueioSalvando} className="w-full h-11 rounded-xl bg-amber-400 text-slate-900 text-sm font-bold disabled:opacity-60">{bloqueioSalvando ? 'Bloqueando...' : 'Bloquear este período'}</button>
+                                         </form>
+                                         {bloqueiosDoDia.length > 0 && <div className="mt-3 space-y-2">
+                                             {bloqueiosDoDia.map(b => <div key={b.id} className="flex items-center justify-between gap-2 bg-slate-800 rounded-xl p-3 text-xs text-slate-300"><span><strong className="text-white">{b.horario === '*' ? 'Dia inteiro' : b.horario}</strong> · {b.motivo || 'Bloqueado'}</span><button type="button" onClick={() => removerBloqueio(b.id)} className="h-9 px-3 rounded-lg border border-slate-600 text-white font-bold">Liberar</button></div>)}
+                                         </div>}
+                                     </div>
+                                 </div>
                             </div>
+                            </>
                         )}
 
                         {/* ════ PACIENTES ════ */}
@@ -856,18 +1080,22 @@
                                         <input type="text" placeholder="Buscar por nome ou telefone..."
                                             value={termoBusca} onChange={e => setTermoBusca(e.target.value)}
                                             className="w-full sm:w-72 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-teal-500 text-sm" />
-                                        <button onClick={() => setClienteEstado(p => ({ ...p, aberto:!p.aberto, erro:null }))} className="h-10 px-4 bg-teal-600 text-white rounded-xl text-xs font-bold hover:bg-teal-700">
+                                        <button onClick={() => { setNovoCliente({ id:null,nome:'',telefone:'',email:'',data_nascimento:'' }); setClienteEstado({ aberto:true,loading:false,erro:null }); }} className="h-12 px-5 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700">
                                             <i className="fa-solid fa-user-plus mr-1.5"></i>Novo paciente
                                         </button>
                                     </div>
                                 </div>
                                 {clienteEstado.aberto && (
-                                    <form onSubmit={criarCliente} className="grid sm:grid-cols-4 gap-3 bg-teal-50 border border-teal-100 p-4 rounded-2xl mb-5">
-                                        <input required placeholder="Nome completo" value={novoCliente.nome} onChange={e => setNovoCliente(p => ({...p,nome:e.target.value}))} className="h-11 px-3 rounded-xl border border-teal-200 bg-white text-sm outline-none focus:border-teal-500" />
-                                        <input required placeholder="Telefone com DDD" value={novoCliente.telefone} onChange={e => setNovoCliente(p => ({...p,telefone:e.target.value}))} className="h-11 px-3 rounded-xl border border-teal-200 bg-white text-sm outline-none focus:border-teal-500" />
-                                        <input type="email" placeholder="E-mail (opcional)" value={novoCliente.email} onChange={e => setNovoCliente(p => ({...p,email:e.target.value}))} className="h-11 px-3 rounded-xl border border-teal-200 bg-white text-sm outline-none focus:border-teal-500" />
-                                        <button disabled={clienteEstado.loading} className="h-11 bg-slate-900 text-white rounded-xl text-xs font-bold disabled:opacity-60">{clienteEstado.loading ? 'Salvando...' : 'Cadastrar'}</button>
-                                        {clienteEstado.erro && <p role="alert" className="sm:col-span-4 text-xs text-red-700 font-semibold">{clienteEstado.erro}</p>}
+                                    <form onSubmit={criarCliente} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-teal-50 border border-teal-100 p-5 rounded-2xl mb-5">
+                                        <label className="text-xs font-bold text-slate-600">Nome completo<input required value={novoCliente.nome} onChange={e => setNovoCliente(p => ({...p,nome:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-teal-200 bg-white text-sm font-normal outline-none focus:border-teal-500" /></label>
+                                        <label className="text-xs font-bold text-slate-600">Telefone com DDD<input required inputMode="numeric" value={novoCliente.telefone} onChange={e => setNovoCliente(p => ({...p,telefone:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-teal-200 bg-white text-sm font-normal outline-none focus:border-teal-500" /></label>
+                                        <label className="text-xs font-bold text-slate-600">E-mail (opcional)<input type="email" value={novoCliente.email} onChange={e => setNovoCliente(p => ({...p,email:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-teal-200 bg-white text-sm font-normal outline-none focus:border-teal-500" /></label>
+                                        <label className="text-xs font-bold text-slate-600">Nascimento (opcional)<input type="date" value={isoParaDia(novoCliente.data_nascimento)} onChange={e => setNovoCliente(p => ({...p,data_nascimento:e.target.value}))} className="mt-1.5 w-full h-12 px-3 rounded-xl border border-teal-200 bg-white text-sm font-normal outline-none focus:border-teal-500" /></label>
+                                        <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-3">
+                                            <button type="button" onClick={() => setClienteEstado({aberto:false,loading:false,erro:null})} className="h-11 px-4 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold">Cancelar</button>
+                                            <button disabled={clienteEstado.loading} className="h-11 px-5 bg-slate-900 text-white rounded-xl text-sm font-bold disabled:opacity-60">{clienteEstado.loading ? 'Salvando...' : novoCliente.id ? 'Salvar alterações' : 'Cadastrar paciente'}</button>
+                                        </div>
+                                        {clienteEstado.erro && <p role="alert" className="sm:col-span-2 lg:col-span-4 text-sm bg-red-50 text-red-700 p-3 rounded-xl font-semibold">{clienteEstado.erro}</p>}
                                     </form>
                                 )}
                                 <div className="overflow-x-auto">
@@ -898,10 +1126,13 @@
                                                         {formatarData(p.ultimaConsulta)}
                                                     </td>
                                                     <td className="px-5 py-4 text-right">
-                                                        <button onClick={() => abrirProntuario(p.telefone)}
-                                                            className="border border-slate-200 text-slate-600 hover:text-teal-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ml-auto transition">
-                                                            <i className="fa-solid fa-clock-rotate-left"></i> Histórico
-                                                        </button>
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => { setNovoCliente({ id:p.id,nome:p.nome,telefone:p.telefone,email:p.email || '',data_nascimento:isoParaDia(p.data_nascimento) }); setClienteEstado({aberto:true,loading:false,erro:null}); }} className="h-10 px-3 rounded-lg border border-teal-200 text-teal-700 text-xs font-bold"><i className="fa-solid fa-pen mr-1"></i>Editar</button>
+                                                            <button onClick={() => abrirProntuario(p.id)}
+                                                                className="h-10 border border-slate-200 text-slate-600 hover:text-teal-600 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition">
+                                                                <i className="fa-solid fa-clock-rotate-left"></i> Histórico
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -970,8 +1201,8 @@
                                                                     {formatarData(c.data)}
                                                                     <span className="text-slate-400 font-normal text-xs ml-2">({formatarHorario(c.horario)})</span>
                                                                 </p>
-                                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${c.status === 'confirmada' ? 'bg-green-100 text-green-700' : c.status === 'faltou' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
-                                                                    {c.status === 'confirmada' ? '✅ Compareceu' : c.status === 'faltou' ? '❌ Faltou' : '⏳ Aguardando'}
+                                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${statusInfo(c.status).classe}`}>
+                                                                    {statusInfo(c.status).curto}
                                                                 </span>
                                                             </div>
                                                             <p className="text-slate-500 text-xs mt-1 capitalize">Motivo: {c.preferencia || 'Avaliação geral'}</p>
@@ -1004,7 +1235,7 @@
                                     <div>
                                         <p className="text-xs text-teal-600 font-bold uppercase tracking-widest">Acesso seguro</p>
                                         <h2 className="text-xl font-extrabold text-slate-900 mt-1">Adicionar à equipe</h2>
-                                        <p className="text-xs text-slate-500 mt-1">Cada pessoa recebe seu próprio login.</p>
+                                        <p className="text-xs text-slate-500 mt-1">A pessoa receberá um convite seguro por e-mail e criará a própria senha.</p>
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5">Nome completo</label>
@@ -1013,11 +1244,6 @@
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5">E-mail</label>
                                         <input required type="email" value={novoUsuario.email} onChange={e => setNovoUsuario(p => ({...p,email:e.target.value}))} className="w-full h-11 px-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:border-teal-500 text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5">Senha temporária</label>
-                                        <input required type="password" minLength="8" value={novoUsuario.senha} onChange={e => setNovoUsuario(p => ({...p,senha:e.target.value}))} className="w-full h-11 px-3 border border-slate-200 rounded-xl bg-slate-50 outline-none focus:border-teal-500 text-sm" />
-                                        <p className="text-[10px] text-slate-400 mt-1">Pelo menos 8 caracteres, letra e número.</p>
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5">Perfil</label>
@@ -1029,7 +1255,7 @@
                                     </div>
                                     {equipeEstado.erro && <p role="alert" className="text-xs text-red-700 bg-red-50 p-3 rounded-xl">{equipeEstado.erro}</p>}
                                     {equipeEstado.sucesso && <p className="text-xs text-green-700 bg-green-50 p-3 rounded-xl">{equipeEstado.sucesso}</p>}
-                                    <button disabled={equipeEstado.loading} className="w-full h-11 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-teal-700 disabled:opacity-60">{equipeEstado.loading ? 'Criando...' : 'Criar acesso'}</button>
+                                    <button disabled={equipeEstado.loading} className="w-full h-12 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-teal-700 disabled:opacity-60"><i className="fa-solid fa-paper-plane mr-2"></i>{equipeEstado.loading ? 'Enviando convite...' : 'Enviar convite por e-mail'}</button>
                                 </form>
 
                                 <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
@@ -1055,6 +1281,47 @@
                                         ))}
                                         {usuarios.length === 0 && <p className="p-8 text-center text-sm text-slate-400">Carregando usuários...</p>}
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ════ CONFIGURAÇÃO E SEGURANÇA ════ */}
+                        {telaAtiva === 'configuracao' && usuario?.papel === 'admin' && (
+                            <div className="max-w-5xl space-y-6">
+                                <div>
+                                    <p className="text-xs uppercase tracking-widest text-teal-600 font-bold">Central de configuração</p>
+                                    <h2 className="text-2xl font-extrabold text-slate-900 mt-1">Tudo pronto para trabalhar?</h2>
+                                    <p className="text-sm text-slate-500 mt-1">Veja o que está funcionando sem precisar entender detalhes técnicos.</p>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-5">
+                                    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div><h3 className="font-extrabold text-slate-900"><i className="fa-solid fa-envelope text-teal-600 mr-2"></i>E-mails automáticos</h3><p className="text-sm text-slate-500 mt-2">Recuperação de senha, convites e avisos de consulta.</p></div>
+                                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${sistemaStatus?.emailConfigurado ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{sistemaStatus?.emailConfigurado ? 'Conectado' : 'Não configurado'}</span>
+                                        </div>
+                                        {sistemaStatus?.emailConfigurado ? <button type="button" onClick={testarEmail} className="mt-5 h-11 px-4 rounded-xl bg-slate-900 text-white text-sm font-bold"><i className="fa-solid fa-paper-plane mr-2"></i>Enviar e-mail de teste</button> : <div className="mt-5 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-800"><strong>Ação necessária:</strong> preencha SMTP_USER, SMTP_PASS e MAIL_FROM no ambiente do servidor e reinicie.</div>}
+                                    </div>
+                                    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                                        <h3 className="font-extrabold text-slate-900"><i className="fa-solid fa-shield-halved text-teal-600 mr-2"></i>Acesso protegido</h3>
+                                        <div className="mt-4 space-y-3 text-sm">
+                                            <div className="flex justify-between gap-3"><span className="text-slate-500">Sessão individual</span><strong className="text-green-700">Ativa</strong></div>
+                                            <div className="flex justify-between gap-3"><span className="text-slate-500">Banco conectado</span><strong className="text-green-700">Ativo</strong></div>
+                                            <div className="flex justify-between gap-3"><span className="text-slate-500">Site em HTTPS</span><strong className={sistemaStatus?.urlSegura ? 'text-green-700' : 'text-amber-700'}>{sistemaStatus?.urlSegura ? 'Sim' : 'Somente ao publicar'}</strong></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+                                    <h3 className="font-extrabold text-slate-900"><i className="fa-solid fa-file-export text-teal-600 mr-2"></i>Exportar uma cópia</h3>
+                                    <p className="text-sm text-slate-500 mt-1">Baixe planilhas para conferência ou backup operacional. Guarde-as em local seguro.</p>
+                                    <div className="flex flex-wrap gap-3 mt-5">
+                                        <a href={`${API}/exportar/agendamentos.csv`} className="h-11 px-4 rounded-xl border border-slate-200 text-slate-700 text-sm font-bold inline-flex items-center"><i className="fa-solid fa-calendar-days mr-2 text-teal-600"></i>Baixar agendamentos</a>
+                                        <a href={`${API}/exportar/clientes.csv`} className="h-11 px-4 rounded-xl border border-slate-200 text-slate-700 text-sm font-bold inline-flex items-center"><i className="fa-solid fa-users mr-2 text-teal-600"></i>Baixar pacientes</a>
+                                    </div>
+                                </div>
+                                <div className="bg-teal-50 border border-teal-100 rounded-3xl p-6">
+                                    <h3 className="font-extrabold text-teal-900">Sua conta</h3>
+                                    <p className="text-sm text-teal-800 mt-1"><strong>{usuario.nome}</strong><br />{usuario.email}</p>
+                                    <button type="button" onClick={() => { setToken(false); setAuthMode('esqueci'); }} className="mt-4 h-11 px-4 rounded-xl bg-white border border-teal-200 text-teal-800 text-sm font-bold">Receber link para trocar minha senha</button>
                                 </div>
                             </div>
                         )}
@@ -1146,8 +1413,8 @@
                                                         </td>
                                                         <td className="px-6 py-3 text-xs text-slate-500 capitalize">{item.preferencia || '—'}</td>
                                                         <td className="px-6 py-3">
-                                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${item.status === 'confirmada' ? 'bg-green-100 text-green-700' : item.status === 'faltou' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
-                                                                {item.status === 'confirmada' ? '✅ Compareceu' : item.status === 'faltou' ? '❌ Faltou' : '⏳ Aguardando'}
+                                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${statusInfo(item.status).classe}`}>
+                                                                {statusInfo(item.status).curto}
                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-3 text-xs text-right font-mono">

@@ -16,11 +16,12 @@ CREATE TABLE usuarios (
 CREATE TABLE clientes (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(120) NOT NULL,
-    telefone VARCHAR(20) NOT NULL UNIQUE,
+    telefone VARCHAR(20) NOT NULL,
     email VARCHAR(190) NULL,
     data_nascimento DATE NULL,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_clientes_telefone (telefone)
 );
 
 CREATE TABLE sessoes (
@@ -42,4 +43,38 @@ CREATE TABLE recuperacoes_senha (
     usado_em DATETIME NULL,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+);
+
+CREATE TABLE bloqueios_agenda (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    data DATE NOT NULL,
+    horario VARCHAR(20) NOT NULL DEFAULT '*',
+    motivo VARCHAR(180) NULL,
+    criado_por INT UNSIGNED NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_bloqueios_data_horario (data, horario),
+    FOREIGN KEY (criado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+);
+
+CREATE TABLE reservas_horario (
+    data DATE NOT NULL,
+    horario VARCHAR(20) NOT NULL,
+    agendamento_id INT NOT NULL UNIQUE,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (data, horario),
+    FOREIGN KEY (agendamento_id) REFERENCES agendamentos(id) ON DELETE CASCADE
+);
+
+CREATE TABLE auditoria (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT UNSIGNED NULL,
+    acao VARCHAR(80) NOT NULL,
+    entidade VARCHAR(50) NOT NULL,
+    entidade_id VARCHAR(80) NULL,
+    detalhes JSON NULL,
+    ip VARCHAR(64) NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_auditoria_data (criado_em),
+    INDEX idx_auditoria_entidade (entidade, entidade_id),
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
 );

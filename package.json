@@ -7,7 +7,10 @@
   "scripts": {
     "start": "node server.js",
     "migrate": "node database/migrate.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build:assets": "node scripts/prepare-assets.js && tailwindcss -c tailwind.config.js -i public/assets/tailwind-input.css -o public/assets/site.css --minify",
+    "build": "npm run build:assets && npm test",
+    "check": "node --check server.js && node --check database/migrate.js && node --check lib/security.js && npm test"
   },
   "keywords": [
     "odontologia",
@@ -17,7 +20,7 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": ">=24 <25"
   },
   "dependencies": {
     "cors": "^2.8.6",
@@ -27,6 +30,10 @@
     "nodemailer": "^9.0.5"
   },
   "devDependencies": {
-    "@babel/standalone": "^8.0.4"
+    "@babel/standalone": "^8.0.4",
+    "@fortawesome/fontawesome-free": "6.7.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "3.4.17"
   }
 }

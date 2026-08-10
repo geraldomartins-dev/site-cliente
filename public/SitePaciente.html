@@ -22,11 +22,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/fontawesome/css/all.min.css">
+    <script src="/config.js"></script>
+    <script src="/assets/react.production.min.js"></script>
+    <script src="/assets/react-dom.production.min.js"></script>
+    <script src="/assets/babel.min.js"></script>
     <style>
         * { font-family: 'Plus Jakarta Sans', sans-serif; }
         * { box-sizing: border-box; }
@@ -99,6 +100,11 @@
     const API_BASE = window.location.protocol === 'file:'
         ? 'http://localhost:3001'
         : window.location.origin;
+    const CONFIG = window.CLINICA_CONFIG || {
+        nome:'Clínica Dra. Naty', whatsapp:'554396941226', whatsappExibicao:'(43) 9694-1226',
+        whatsappUrl:'https://wa.me/554396941226', instagram:'natylapicoloto',
+        instagramUrl:'https://www.instagram.com/natylapicoloto', endereco:'Centro — Jacarezinho, PR', cro:''
+    };
 
     // ─── HELPERS ──────────────────────────────────────────────────────────
     const dataMinima = () => {
@@ -131,24 +137,26 @@
     // ─── GRADE DE HORÁRIOS ─────────────────────────────────────────────────
     function GradeHorarios({ data, horarioSelecionado, onSelect }) {
         const [disponiveis, setDisponiveis] = useState([]);
+        const [todos, setTodos] = useState([]);
         const [carregando,  setCarregando]  = useState(false);
         const [erro, setErro] = useState(false);
         const [tentativa, setTentativa] = useState(0);
-        const todos = ['08:00','09:00','10:00','11:00','13:00','14:00','15:00','16:00','17:00'];
 
         useEffect(() => {
-            if (!data) { setDisponiveis([]); return; }
+            if (!data) { setDisponiveis([]); setTodos([]); return; }
+            const controlador = new AbortController();
             setCarregando(true);
             setErro(false);
             onSelect(''); // reseta seleção ao mudar data
-            fetch(`${API_BASE}/api/horarios-disponiveis?data=${data}`)
+            fetch(`${API_BASE}/api/horarios-disponiveis?data=${encodeURIComponent(data)}`, { signal:controlador.signal })
                 .then(r => {
                     if (!r.ok) throw new Error('Não foi possível consultar a agenda.');
                     return r.json();
                 })
-                .then(d => { setDisponiveis(d.disponiveis || []); })
-                .catch(() => { setDisponiveis([]); setErro(true); })
+                .then(d => { setDisponiveis(d.disponiveis || []); setTodos(d.todos || []); })
+                .catch(err => { if (err.name !== 'AbortError') { setDisponiveis([]); setTodos([]); setErro(true); } })
                 .finally(() => setCarregando(false));
+            return () => controlador.abort();
         }, [data, tentativa]);
 
         if (!data) return (
@@ -168,6 +176,7 @@
                     type="button"
                     disabled={!livre || carregando}
                     onClick={() => livre && onSelect(h)}
+                    aria-pressed={sel}
                     className={`horario-btn ${sel ? 'selected' : ''} ${carregando ? 'carregando' : ''}`}
                     title={livre ? `Selecionar ${h}` : 'Horário ocupado'}
                 >
@@ -183,7 +192,7 @@
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                         <i className="fa-solid fa-sun text-amber-400"></i> Manhã
                     </p>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {manha.map(h => <Slot key={h} h={h} />)}
                     </div>
                 </div>
@@ -191,7 +200,7 @@
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                         <i className="fa-solid fa-moon text-indigo-400"></i> Tarde
                     </p>
-                    <div className="grid grid-cols-5 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         {tarde.map(h => <Slot key={h} h={h} />)}
                     </div>
                 </div>
@@ -218,7 +227,7 @@
     // ─── FORMULÁRIO ────────────────────────────────────────────────────────
     function FormAgendamento() {
         const [formData, setFormData] = useState({
-            nome:'', telefone:'', data:'', horario:'', preferencia:'', observacoes:''
+            nome:'', telefone:'', email:'', data:'', horario:'', preferencia:'', observacoes:'', website:''
         });
         const [estado, setEstado] = useState({ loading:false, enviado:false, erro:null });
         const [aceitouPrivacidade, setAceitouPrivacidade] = useState(false);
@@ -262,14 +271,14 @@
                 const res = await fetch(`${API_BASE}/api/agendamentos`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...formData, telefone: tel })
+                    body: JSON.stringify({ ...formData, telefone: tel, privacidadeAceita:true })
                 });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.erro || 'Erro ao enviar.');
-                setResumoPedido({ data:formData.data, horario:formData.horario });
+                setResumoPedido({ data:formData.data, horario:formData.horario, protocolo:data.protocolo, emailEnviado:data.emailEnviado, email:formData.email });
                 setEstado({ loading:false, enviado:true, erro:null });
                 setAceitouPrivacidade(false);
-                setFormData({ nome:'', telefone:'', data:'', horario:'', preferencia:'', observacoes:'' });
+                setFormData({ nome:'', telefone:'', email:'', data:'', horario:'', preferencia:'', observacoes:'', website:'' });
             } catch (err) {
                 setEstado({ loading:false, enviado:false, erro: err.message });
                 setTimeout(() => setEstado(p => ({ ...p, erro:null })), 7000);
@@ -287,7 +296,9 @@
                 <p className="text-slate-500 max-w-xs leading-relaxed text-sm">
                     Reservamos sua solicitação para {resumoPedido?.data ? new Date(`${resumoPedido.data}T12:00:00`).toLocaleDateString('pt-BR') : 'a data escolhida'}, às {resumoPedido?.horario}. A consulta fica confirmada após nosso retorno pelo WhatsApp.
                 </p>
-                <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                {resumoPedido?.protocolo && <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-3"><p className="text-xs text-slate-500">Seu protocolo</p><strong className="text-slate-900 tracking-wide">{resumoPedido.protocolo}</strong></div>}
+                {resumoPedido?.email && <p className={`text-xs font-semibold ${resumoPedido.emailEnviado ? 'text-green-700' : 'text-amber-700'}`}><i className={`fa-solid ${resumoPedido.emailEnviado ? 'fa-envelope-circle-check' : 'fa-circle-info'} mr-1`}></i>{resumoPedido.emailEnviado ? `Enviamos uma cópia para ${resumoPedido.email}.` : 'Seu pedido foi salvo, mas a cópia por e-mail não pôde ser enviada agora.'}</p>}
+                <a href={CONFIG.whatsappUrl} target="_blank" rel="noopener noreferrer"
                    className="inline-flex items-center gap-2 bg-green-500 text-white font-bold px-6 py-3 rounded-full hover:bg-green-600 transition shadow-md">
                     <i className="fa-brands fa-whatsapp text-lg"></i> Conversar no WhatsApp
                 </a>
@@ -299,7 +310,7 @@
         );
 
         return (
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="mb-5">
                     <p className="text-xs font-bold uppercase tracking-widest text-teal-600 mb-1">Leva menos de 2 minutos</p>
                     <h3 className="text-xl font-bold text-slate-900">Solicite seu horário</h3>
@@ -307,7 +318,7 @@
                 </div>
 
                 {estado.erro && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                    <div role="alert" aria-live="assertive" className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
                         <i className="fa-solid fa-circle-exclamation flex-shrink-0"></i>
                         {estado.erro}
                     </div>
@@ -331,6 +342,12 @@
                     <input id="telefone" autoComplete="tel" required type="tel" name="telefone" value={formData.telefone} onChange={handleChange}
                         placeholder="(43) 9 9999-0000" inputMode="numeric"
                         className={fieldClass} />
+                </div>
+
+                {/* Motivo */}
+                <div>
+                    <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-1.5">E-mail <span className="text-slate-400 font-normal text-xs">(opcional)</span></label>
+                    <input id="email" autoComplete="email" type="email" name="email" value={formData.email} onChange={handleChange} maxLength={190} placeholder="Para receber uma cópia do pedido" className={fieldClass} />
                 </div>
 
                 {/* Motivo */}
@@ -383,18 +400,19 @@
                 {/* Observações */}
                 <div>
                     <label htmlFor="observacoes" className="block text-sm font-semibold text-slate-700 mb-1.5">
-                        Observações <span className="text-slate-400 font-normal text-xs">(opcional)</span>
+                        Recado para a recepção <span className="text-slate-400 font-normal text-xs">(opcional)</span>
                     </label>
                     <textarea id="observacoes" name="observacoes" value={formData.observacoes} onChange={handleChange}
-                        rows="2" maxLength={1000} placeholder="Alguma informação adicional?"
+                        rows="2" maxLength={500} placeholder="Ex.: prefiro contato à tarde. Não envie exames, diagnósticos ou dados clínicos aqui."
                         className={`${fieldClass} resize-none`}>
                     </textarea>
                 </div>
 
                 <label className="flex items-start gap-3 p-3 rounded-xl bg-teal-50 border border-teal-100 cursor-pointer">
                     <input type="checkbox" checked={aceitouPrivacidade} onChange={e => setAceitouPrivacidade(e.target.checked)} className="mt-0.5 w-4 h-4 accent-teal-600" />
-                    <span className="text-xs text-slate-600 leading-relaxed">Autorizo o uso destes dados exclusivamente para contato e organização do atendimento.</span>
+                    <span className="text-xs text-slate-600 leading-relaxed">Li o <a href="/privacidade" target="_blank" className="font-bold text-teal-700 underline">Aviso de Privacidade</a> e estou ciente do uso destes dados para contato e organização do atendimento.</span>
                 </label>
+                <div className="absolute -left-[9999px]" aria-hidden="true"><label>Não preencha<input tabIndex="-1" autoComplete="off" name="website" value={formData.website} onChange={handleChange} /></label></div>
 
                 <button disabled={estado.loading || !formData.horario || !aceitouPrivacidade} type="submit"
                     className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 active:bg-teal-800 transition shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex justify-center items-center gap-2 text-base mt-2">
@@ -465,7 +483,7 @@
                             </div>
                             <div>
                                 <span className="text-base font-bold text-slate-900 block leading-tight">Dra. Natyla Picoloto</span>
-                                <span className="text-[10px] text-teal-600 font-semibold tracking-widest uppercase">Clínica Dentária</span>
+                                <span className="text-[10px] text-teal-600 font-semibold tracking-widest uppercase">Clínica Dentária{CONFIG.cro ? ` · ${CONFIG.cro}` : ''}</span>
                             </div>
                         </a>
                         <nav className="hidden md:flex items-center gap-7 font-semibold text-sm text-slate-600">
@@ -478,13 +496,13 @@
                         </nav>
                         <div className="md:hidden flex items-center gap-3">
                             <a href="#agendar" className="bg-teal-600 text-white px-4 py-2 rounded-full text-xs font-bold">Agendar</a>
-                            <button onClick={() => setMobileOpen(!mobileOpen)} className="w-9 h-9 flex items-center justify-center text-slate-500">
+                            <button onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={mobileOpen} aria-controls="menu-mobile" className="w-11 h-11 flex items-center justify-center text-slate-500">
                                 <i className={`fa-solid ${mobileOpen ? 'fa-xmark' : 'fa-bars'} text-lg`}></i>
                             </button>
                         </div>
                     </div>
                     {mobileOpen && (
-                        <div className="md:hidden pb-4 border-t border-slate-100 mt-1 pt-3 flex flex-col gap-1">
+                        <div id="menu-mobile" className="md:hidden pb-4 border-t border-slate-100 mt-1 pt-3 flex flex-col gap-1">
                             {[['#inicio','Início'],['#servicos','Especialidades'],['#como-funciona','Como funciona'],['#agendar','Agendar Consulta']].map(([href,label]) => (
                                 <a key={href} href={href} onClick={() => setMobileOpen(false)}
                                    className="px-3 py-2.5 rounded-xl text-slate-600 font-semibold text-sm hover:bg-teal-50 hover:text-teal-700 transition-colors">
@@ -513,13 +531,15 @@
 
         return (
             <div className="min-h-screen">
+                <a href="#conteudo-principal" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:bg-slate-900 focus:text-white focus:px-4 focus:py-3 focus:rounded-xl">Pular para o conteúdo</a>
                 <Header />
-                <a href="https://wa.me/554396941226?text=Ol%C3%A1%2C%20gostaria%20de%20tirar%20uma%20d%C3%BAvida%20sobre%20o%20atendimento." target="_blank" rel="noopener noreferrer" aria-label="Falar com a clínica pelo WhatsApp"
+                <a href={`${CONFIG.whatsappUrl}?text=Ol%C3%A1%2C%20gostaria%20de%20tirar%20uma%20d%C3%BAvida%20sobre%20o%20atendimento.`} target="_blank" rel="noopener noreferrer" aria-label="Falar com a clínica pelo WhatsApp"
                    className="fixed bottom-4 right-4 z-40 bg-green-500 text-white h-12 px-4 rounded-full shadow-xl flex items-center gap-2 font-bold text-xs hover:bg-green-600 transition">
                     <i className="fa-brands fa-whatsapp text-xl"></i><span className="hidden sm:inline">Falar no WhatsApp</span>
                 </a>
 
                 {/* ── HERO ─── */}
+                <main id="conteudo-principal">
                 <section id="inicio" className="bg-gradient-to-br from-teal-50 via-white to-slate-50 pt-16 pb-20 md:pt-20 md:pb-28 px-5 md:px-8 overflow-hidden" ref={heroRef}>
                     <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 items-center">
                         <div>
@@ -541,7 +561,7 @@
                                 <a href="#agendar" className="inline-flex items-center gap-2 bg-slate-900 text-white px-6 py-3.5 rounded-full font-bold text-sm hover:bg-teal-700 transition shadow-lg hover:-translate-y-0.5">
                                     <i className="fa-solid fa-calendar-check"></i> Solicitar horário
                                 </a>
-                                <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                                <a href={CONFIG.whatsappUrl} target="_blank" rel="noopener noreferrer"
                                    className="inline-flex items-center gap-2 bg-green-500 text-white px-6 py-3.5 rounded-full font-bold text-sm hover:bg-green-600 transition shadow-lg hover:-translate-y-0.5">
                                     <i className="fa-brands fa-whatsapp text-lg"></i> WhatsApp Direto
                                 </a>
@@ -665,10 +685,10 @@
                             </p>
                             <div className="space-y-5">
                                 {[
-                                    { icon:'fa-brands fa-whatsapp', href:'https://wa.me/554396941226', titulo:'WhatsApp',  sub:'(43) 9694-1226',              cor:'bg-green-500/20 text-green-400' },
-                                    { icon:'fa-solid fa-location-dot', href:null,                      titulo:'Endereço', sub:'Centro — Jacarezinho, PR',       cor:'bg-teal-500/20 text-teal-400' },
+                                    { icon:'fa-brands fa-whatsapp', href:CONFIG.whatsappUrl, titulo:'WhatsApp',  sub:CONFIG.whatsappExibicao, cor:'bg-green-500/20 text-green-400' },
+                                    { icon:'fa-solid fa-location-dot', href:null, titulo:'Endereço', sub:CONFIG.endereco, cor:'bg-teal-500/20 text-teal-400' },
                                     { icon:'fa-regular fa-clock', href:null,                           titulo:'Horário',  sub:'Segunda a Sexta, 08h às 18h',    cor:'bg-blue-500/20 text-blue-400' },
-                                    { icon:'fa-brands fa-instagram', href:'https://www.instagram.com/natylapicoloto', titulo:'Instagram', sub:'@natylapicoloto', cor:'bg-pink-500/20 text-pink-400' },
+                                    { icon:'fa-brands fa-instagram', href:CONFIG.instagramUrl, titulo:'Instagram', sub:`@${CONFIG.instagram}`, cor:'bg-pink-500/20 text-pink-400' },
                                 ].map((c,i) => {
                                     const inner = (
                                         <div className={`flex items-center gap-4 group ${c.href ? 'cursor-pointer' : ''}`}>
@@ -694,24 +714,26 @@
                 </section>
 
                 {/* ── FOOTER ─── */}
+                </main>
                 <footer className="bg-slate-950 text-slate-400 py-10 px-5 md:px-8 border-t border-slate-900">
                     <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 text-sm">
                         <div className="flex items-center gap-2 text-slate-300">
                             <div className="bg-teal-600 text-white w-7 h-7 rounded-lg flex items-center justify-center text-xs">
                                 <i className="fa-solid fa-tooth"></i>
                             </div>
-                            <span className="font-bold">Dra. Natyla Picoloto</span>
+                            <span className="font-bold">Dra. Natyla Picoloto{CONFIG.cro ? ` · ${CONFIG.cro}` : ''}</span>
                             <span className="text-slate-700">·</span>
                             <span className="text-slate-500">Clínica Dentária — Jacarezinho, PR</span>
                         </div>
                         <div className="flex gap-5 items-center">
-                            <a href="https://www.instagram.com/natylapicoloto" target="_blank" rel="noopener noreferrer"
+                            <a href="/privacidade" className="hover:text-teal-400 transition text-xs">Privacidade</a>
+                            <a href={CONFIG.instagramUrl} target="_blank" rel="noopener noreferrer"
                                className="hover:text-teal-400 transition flex items-center gap-1.5 text-xs">
-                                <i className="fa-brands fa-instagram"></i> @natylapicoloto
+                                <i className="fa-brands fa-instagram"></i> @{CONFIG.instagram}
                             </a>
-                            <a href="https://wa.me/554396941226" target="_blank" rel="noopener noreferrer"
+                            <a href={CONFIG.whatsappUrl} target="_blank" rel="noopener noreferrer"
                                className="hover:text-green-400 transition flex items-center gap-1.5 text-xs">
-                                <i className="fa-brands fa-whatsapp"></i> (43) 9694-1226
+                                <i className="fa-brands fa-whatsapp"></i> {CONFIG.whatsappExibicao}
                             </a>
                         </div>
                     </div>
