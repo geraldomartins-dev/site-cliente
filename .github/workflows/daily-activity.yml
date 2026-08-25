@@ -1,0 +1,35 @@
+name: Atividade diaria
+
+on:
+  schedule:
+    # 00:30 UTC corresponde a 21:30 no horario de Sao Paulo.
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-activity
+  cancel-in-progress: false
+
+jobs:
+  daily-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar repositorio
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Criar e publicar commit diario
+        env:
+          TZ: America/Sao_Paulo
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "chore: registra atividade diaria $(date +'%Y-%m-%d')"
+          git push origin "HEAD:${DEFAULT_BRANCH}"
