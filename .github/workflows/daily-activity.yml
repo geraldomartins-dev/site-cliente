@@ -29,7 +29,7 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "geraldomartins-dev"
+          git config user.email "160769646+geraldomartins-dev@users.noreply.github.com"
           git commit --allow-empty -m "chore: registra atividade diaria $(date +'%Y-%m-%d')"
           git push origin "HEAD:${DEFAULT_BRANCH}"
